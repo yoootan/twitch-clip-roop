@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import styled from "styled-components";
-import axios from "axios";
-import "./App.css";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import styled from 'styled-components';
+import axios from 'axios';
+import './App.css';
 
 interface TwitchClip {
   id: string;
@@ -13,6 +13,14 @@ interface TwitchClip {
   view_count: number;
   created_at: string;
   duration: number;
+}
+
+interface TwitchApiParams {
+  broadcaster_id: string;
+  first: number;
+  after?: string;
+  started_at?: string;
+  ended_at?: string;
 }
 
 const Container = styled.div`
@@ -228,7 +236,7 @@ const FilterSelect = styled.select`
 `;
 
 function App() {
-  const [streamerName, setStreamerName] = useState("");
+  const [streamerName, setStreamerName] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [currentClip, setCurrentClip] = useState<TwitchClip | null>(null);
   const [loading, setLoading] = useState(false);
@@ -239,127 +247,254 @@ function App() {
   const [clips, setClips] = useState<TwitchClip[]>([]);
   const [currentClipIndex, setCurrentClipIndex] = useState(0);
   const playerRef = useRef<HTMLIFrameElement>(null);
-  const [sortBy, setSortBy] = useState<"views" | "created_at" | "duration">(
-    "created_at"
+  const [sortBy, setSortBy] = useState<'views' | 'created_at' | 'duration'>(
+    'created_at'
   );
-  const [timeFilter, setTimeFilter] = useState<"24h" | "7d" | "30d" | "180d">(
-    "24h"
-  );
+  const [timeFilter, setTimeFilter] = useState<
+    '24h' | '7d' | '30d' | '180d' | 'all'
+  >('24h');
   const [durationFilter, setDurationFilter] = useState<
-    "short" | "medium" | "long" | "all"
-  >("all");
+    'short' | 'medium' | 'long' | 'all'
+  >('all');
+  const [totalClips, setTotalClips] = useState<number>(0);
 
-  useEffect(() => {
-    if (clips.length > 0 && !currentClip) {
-      setCurrentClip(clips[0]);
-      setCurrentClipIndex(0);
-    }
-  }, [clips]);
+  // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
+  const filterClips = useCallback(
+    (clips: TwitchClip[]) => {
+      let filtered = [...clips];
 
-  useEffect(() => {
-    let timeoutId: number;
+      if (durationFilter !== 'all') {
+        filtered = filtered.filter((clip) => {
+          switch (durationFilter) {
+            case 'short':
+              return clip.duration <= 30;
+            case 'medium':
+              return clip.duration > 30 && clip.duration <= 60;
+            case 'long':
+              return clip.duration > 60;
+            default:
+              return true;
+          }
+        });
+      }
 
-    if (currentClip) {
-      console.log(
-        `Playing clip: ${currentClip.title}, duration: ${currentClip.duration}秒`
-      );
-
-      // クリップの長さ + 3秒後に次のクリップへ
-      timeoutId = window.setTimeout(() => {
-        playNextClip();
-      }, (currentClip.duration + 3) * 1000);
-
-      return () => {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId);
+      filtered.sort((a, b) => {
+        switch (sortBy) {
+          case 'views':
+            return b.view_count - a.view_count;
+          case 'duration':
+            return b.duration - a.duration;
+          case 'created_at':
+            return (
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+            );
+          default:
+            return 0;
         }
-      };
-    }
-  }, [currentClip]);
+      });
 
-  const fetchClips = async (after?: string | null) => {
-    if (!broadcasterId) return;
+      return filtered;
+    },
+    [durationFilter, sortBy]
+  );
+
+  const fetchTotalClips = useCallback(async () => {
+    if (!broadcasterId) return 0;
 
     try {
       const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
       const accessToken = import.meta.env.VITE_TWITCH_ACCESS_TOKEN;
 
       const now = new Date();
-      const filterTimes = {
-        "24h": 24 * 60 * 60 * 1000,
-        "7d": 7 * 24 * 60 * 60 * 1000,
-        "30d": 30 * 24 * 60 * 60 * 1000,
-        "180d": 180 * 24 * 60 * 60 * 1000,
-      };
-      const filterTime = filterTimes[timeFilter];
-      const endedAt = now.toISOString();
-      const startDate = new Date(now.getTime() - filterTime);
-      const startedAt = startDate.toISOString();
+      const filterTimes: Record<'24h' | '7d' | '30d' | '180d' | 'all', number> =
+        {
+          '24h': 24 * 60 * 60 * 1000,
+          '7d': 7 * 24 * 60 * 60 * 1000,
+          '30d': 30 * 24 * 60 * 60 * 1000,
+          '180d': 180 * 24 * 60 * 60 * 1000,
+          all: 365 * 24 * 60 * 60 * 1000,
+        };
 
-      const response = await axios.get("https://api.twitch.tv/helix/clips", {
-        params: {
-          broadcaster_id: broadcasterId,
-          first: 100,
-          ...(after ? { after } : {}),
+      let params: TwitchApiParams = {
+        broadcaster_id: broadcasterId,
+        first: 1,
+      };
+
+      if (timeFilter !== 'all') {
+        const filterTime = filterTimes[timeFilter];
+        const endedAt = now.toISOString();
+        const startDate = new Date(now.getTime() - filterTime);
+        const startedAt = startDate.toISOString();
+
+        params = {
+          ...params,
           started_at: startedAt,
           ended_at: endedAt,
-        },
+        };
+      }
+
+      const response = await axios.get('https://api.twitch.tv/helix/clips', {
+        params,
         headers: {
-          "Client-ID": clientId,
+          'Client-ID': clientId,
           Authorization: `Bearer ${accessToken}`,
         },
       });
 
-      if (response.data.data.length > 0) {
-        // 長さと並び替えのフィルターを適用
-        const filteredClips = filterClips(response.data.data);
-
-        if (filteredClips.length > 0) {
-          setClips((prevClips) =>
-            after ? [...prevClips, ...filteredClips] : filteredClips
-          );
-          setCursor(response.data.pagination.cursor);
-          setHasMoreClips(!!response.data.pagination.cursor);
-
-          // 初回検索時または新しい検索時は最初のクリップを表示
-          if (!after) {
-            setCurrentClip(filteredClips[0]);
-            setCurrentClipIndex(0);
+      let total = 0;
+      if (response.data.pagination?.cursor) {
+        params.first = 100;
+        const fullResponse = await axios.get(
+          'https://api.twitch.tv/helix/clips',
+          {
+            params,
+            headers: {
+              'Client-ID': clientId,
+              Authorization: `Bearer ${accessToken}`,
+            },
           }
-        } else {
-          if (!after) {
-            setError("選択された期間内のクリップが見つかりませんでした。");
-          }
+        );
+
+        total = fullResponse.data.data.length;
+        if (fullResponse.data.pagination?.cursor) {
+          total = Math.max(100, total);
         }
-      } else if (!after) {
-        setError("クリップが見つかりませんでした。");
+      } else {
+        total = response.data.data.length;
       }
+
+      setTotalClips(total);
+      return total;
     } catch (err) {
-      console.error("Error fetching clips:", err);
-      setError("クリップの取得に失敗しました。");
+      return 0;
     }
-  };
+  }, [broadcasterId, timeFilter]);
 
-  const playNextClip = () => {
+  const fetchClips = useCallback(
+    async (after?: string | null) => {
+      if (!broadcasterId) return null;
+
+      try {
+        const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
+        const accessToken = import.meta.env.VITE_TWITCH_ACCESS_TOKEN;
+
+        const now = new Date();
+        const filterTimes: Record<
+          '24h' | '7d' | '30d' | '180d' | 'all',
+          number
+        > = {
+          '24h': 24 * 60 * 60 * 1000,
+          '7d': 7 * 24 * 60 * 60 * 1000,
+          '30d': 30 * 24 * 60 * 60 * 1000,
+          '180d': 180 * 24 * 60 * 60 * 1000,
+          all: 365 * 24 * 60 * 60 * 1000,
+        };
+
+        let params: TwitchApiParams = {
+          broadcaster_id: broadcasterId,
+          first: 1,
+          ...(after ? { after } : {}),
+        };
+
+        if (timeFilter !== 'all') {
+          const filterTime = filterTimes[timeFilter];
+          const endedAt = now.toISOString();
+          const startDate = new Date(now.getTime() - filterTime);
+          const startedAt = startDate.toISOString();
+
+          params = {
+            ...params,
+            started_at: startedAt,
+            ended_at: endedAt,
+          };
+        }
+
+        const response = await axios.get('https://api.twitch.tv/helix/clips', {
+          params,
+          headers: {
+            'Client-ID': clientId,
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (response.data.data.length > 0) {
+          const filteredClips = filterClips(response.data.data);
+
+          if (filteredClips.length > 0) {
+            setClips((prevClips) => {
+              const newClips = after
+                ? [...prevClips, ...filteredClips]
+                : filteredClips;
+              return newClips;
+            });
+
+            const nextCursor = response.data.pagination?.cursor;
+            setHasMoreClips(!!nextCursor);
+            setCursor(nextCursor || null);
+
+            if (!after) {
+              setCurrentClip(filteredClips[0]);
+              setCurrentClipIndex(0);
+            }
+
+            return filteredClips;
+          }
+
+          if (!after) {
+            setError('選択された期間内のクリップが見つかりませんでした。');
+          }
+          setHasMoreClips(false);
+          return null;
+        }
+
+        if (!after) {
+          setError('クリップが見つかりませんでした。');
+        }
+        setHasMoreClips(false);
+        return null;
+      } catch (err) {
+        setError('クリップの取得に失敗しました。');
+        setHasMoreClips(false);
+        return null;
+      }
+    },
+    [broadcasterId, timeFilter, filterClips]
+  );
+
+  const playNextClip = useCallback(async () => {
     const nextIndex = currentClipIndex + 1;
-
-    // 現在のクリップバッチの80%まで再生した場合、次のバッチを事前に取得
-    if (clips.length > 0 && nextIndex >= clips.length * 0.8 && hasMoreClips) {
-      fetchClips(cursor);
-    }
 
     if (nextIndex < clips.length) {
       setCurrentClip(clips[nextIndex]);
       setCurrentClipIndex(nextIndex);
-    } else if (hasMoreClips) {
-      // 次のバッチのクリップを待機中の場合
-      console.log("Waiting for next batch of clips...");
+    } else if (hasMoreClips && cursor) {
+      try {
+        const newClips = await fetchClips(cursor);
+        if (newClips) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const updatedClips = clips.concat(newClips);
+          if (nextIndex < updatedClips.length) {
+            setCurrentClip(updatedClips[nextIndex]);
+            setCurrentClipIndex(nextIndex);
+          } else {
+            setCurrentClipIndex(0);
+            setCurrentClip(updatedClips[0]);
+          }
+        } else {
+          setCurrentClipIndex(0);
+          setCurrentClip(clips[0]);
+        }
+      } catch (error) {
+        setError('次のクリップの取得に失敗しました。');
+        setCurrentClipIndex(0);
+        setCurrentClip(clips[0]);
+      }
     } else {
-      // すべてのクリップを再生し終わった場合、最初から再開
       setCurrentClipIndex(0);
       setCurrentClip(clips[0]);
     }
-  };
+  }, [currentClipIndex, clips, hasMoreClips, cursor, fetchClips]);
 
   const playPreviousClip = () => {
     const prevIndex = currentClipIndex - 1;
@@ -381,6 +516,7 @@ function App() {
     setBroadcasterId(null);
     setClips([]);
     setCurrentClipIndex(0);
+    setTotalClips(0);
 
     try {
       const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
@@ -388,16 +524,15 @@ function App() {
 
       const searchQuery = streamerName.trim();
 
-      // 配信者の検索
       const userResponse = await axios.get(
-        "https://api.twitch.tv/helix/search/channels",
+        'https://api.twitch.tv/helix/search/channels',
         {
           params: {
             query: searchQuery,
             first: 1,
           },
           headers: {
-            "Client-ID": clientId,
+            'Client-ID': clientId,
             Authorization: `Bearer ${accessToken}`,
           },
         }
@@ -406,62 +541,82 @@ function App() {
       if (userResponse.data.data.length > 0) {
         const broadcaster = userResponse.data.data[0];
         const broadcasterId = broadcaster.id;
+
         setBroadcasterId(broadcasterId);
 
-        // broadcasterIdを直接使用してクリップを取得
         const now = new Date();
-        const filterTimes = {
-          "24h": 24 * 60 * 60 * 1000,
-          "7d": 7 * 24 * 60 * 60 * 1000,
-          "30d": 30 * 24 * 60 * 60 * 1000,
-          "180d": 180 * 24 * 60 * 60 * 1000,
+        const filterTimes: Record<
+          '24h' | '7d' | '30d' | '180d' | 'all',
+          number
+        > = {
+          '24h': 24 * 60 * 60 * 1000,
+          '7d': 7 * 24 * 60 * 60 * 1000,
+          '30d': 30 * 24 * 60 * 60 * 1000,
+          '180d': 180 * 24 * 60 * 60 * 1000,
+          all: 365 * 24 * 60 * 60 * 1000,
         };
-        const filterTime = filterTimes[timeFilter];
-        const endedAt = now.toISOString();
-        const startDate = new Date(now.getTime() - filterTime);
-        const startedAt = startDate.toISOString();
 
-        const response = await axios.get("https://api.twitch.tv/helix/clips", {
-          params: {
-            broadcaster_id: broadcasterId,
-            first: 100,
+        let params: TwitchApiParams = {
+          broadcaster_id: broadcasterId,
+          first: 100,
+        };
+
+        if (timeFilter !== 'all') {
+          const filterTime = filterTimes[timeFilter];
+          const endedAt = now.toISOString();
+          const startDate = new Date(now.getTime() - filterTime);
+          const startedAt = startDate.toISOString();
+
+          params = {
+            ...params,
             started_at: startedAt,
             ended_at: endedAt,
-          },
-          headers: {
-            "Client-ID": clientId,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
+          };
+        }
 
-        if (response.data.data.length > 0) {
-          const filteredClips = filterClips(response.data.data);
-          if (filteredClips.length > 0) {
-            setClips(filteredClips);
-            setCursor(response.data.pagination.cursor);
-            setHasMoreClips(!!response.data.pagination.cursor);
-            setCurrentClip(filteredClips[0]);
-            setCurrentClipIndex(0);
-          } else {
-            setError("選択された期間内のクリップが見つかりませんでした。");
+        const initialResponse = await axios.get(
+          'https://api.twitch.tv/helix/clips',
+          {
+            params,
+            headers: {
+              'Client-ID': clientId,
+              Authorization: `Bearer ${accessToken}`,
+            },
           }
+        );
+
+        if (initialResponse.data.data.length > 0) {
+          const filteredClips = filterClips(initialResponse.data.data);
+
+          setClips(filteredClips);
+          setCurrentClip(filteredClips[0]);
+          setCurrentClipIndex(0);
+
+          const hasNextPage = !!initialResponse.data.pagination?.cursor;
+          setHasMoreClips(hasNextPage);
+          setCursor(initialResponse.data.pagination?.cursor || null);
+
+          const estimatedTotal = hasNextPage
+            ? Math.max(100, filteredClips.length)
+            : filteredClips.length;
+          setTotalClips(estimatedTotal);
         } else {
-          setError("クリップが見つかりませんでした。");
+          setError('クリップが見つかりませんでした。');
         }
       } else {
-        setError("配信者が見つかりませんでした。");
+        setError('配信者が見つかりませんでした。');
       }
     } catch (err) {
       if (axios.isAxiosError(err)) {
         if (err.response?.status === 401) {
-          setError("認証エラー: アクセストークンが無効または期限切れです。");
+          setError('認証エラー: アクセストークンが無効または期限切れです。');
         } else if (err.response?.status === 400) {
-          setError("リクエストエラー: パラメータが正しくありません。");
+          setError('リクエストエラー: パラメータが正しくありません。');
         } else {
           setError(`APIエラー: ${err.response?.data?.message || err.message}`);
         }
       } else {
-        setError("予期せぬエラーが発生しました。");
+        setError('予期せぬエラーが発生しました。');
       }
     } finally {
       setLoading(false);
@@ -473,53 +628,31 @@ function App() {
     playNextClip();
   };
 
-  // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
-  const filterClips = (clips: TwitchClip[]) => {
-    let filtered = [...clips];
-    console.log("フィルタリング開始:", filtered.length, "件");
-
-    // 長さフィルター
-    if (durationFilter !== "all") {
-      const beforeCount = filtered.length;
-      filtered = filtered.filter((clip) => {
-        switch (durationFilter) {
-          case "short":
-            return clip.duration <= 30;
-          case "medium":
-            return clip.duration > 30 && clip.duration <= 60;
-          case "long":
-            return clip.duration > 60;
-          default:
-            return true;
-        }
-      });
-      console.log(
-        "長さフィルター後:",
-        filtered.length,
-        "件",
-        `(${beforeCount}件から)`
-      );
+  useEffect(() => {
+    if (clips.length > 0 && !currentClip) {
+      setCurrentClip(clips[0]);
+      setCurrentClipIndex(0);
     }
+  }, [clips, currentClip]);
 
-    // 並び替え
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "views":
-          return b.view_count - a.view_count;
-        case "duration":
-          return b.duration - a.duration;
-        case "created_at":
-          return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        default:
-          return 0;
-      }
-    });
+  useEffect(() => {
+    let timeoutId: number;
 
-    console.log("最終的なフィルタリング結果:", filtered.length, "件");
-    return filtered;
-  };
+    if (currentClip) {
+      timeoutId = window.setTimeout(
+        () => {
+          playNextClip();
+        },
+        (currentClip.duration + 3) * 1000
+      );
+
+      return () => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      };
+    }
+  }, [currentClip, playNextClip]);
 
   useEffect(() => {
     if (broadcasterId) {
@@ -527,18 +660,19 @@ function App() {
       setCursor(null);
       setClips([]);
       setCurrentClipIndex(0);
-      fetchClips(null);
+      setTotalClips(0);
+      fetchTotalClips().then(() => fetchClips(null));
     }
-  }, [timeFilter, durationFilter, sortBy]);
+  }, [broadcasterId, fetchTotalClips, fetchClips]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
+    return date.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -553,7 +687,7 @@ function App() {
           <FilterSelect
             value={sortBy}
             onChange={(e) =>
-              setSortBy(e.target.value as "views" | "created_at" | "duration")
+              setSortBy(e.target.value as 'views' | 'created_at' | 'duration')
             }
             disabled={isSearching || !broadcasterId}
           >
@@ -565,21 +699,24 @@ function App() {
           <FilterSelect
             value={timeFilter}
             onChange={(e) =>
-              setTimeFilter(e.target.value as "24h" | "7d" | "30d" | "180d")
+              setTimeFilter(
+                e.target.value as '24h' | '7d' | '30d' | '180d' | 'all'
+              )
             }
             disabled={isSearching || !broadcasterId}
           >
             <option value="24h">24時間以内</option>
-            <option value="7d">1週間以内</option>
-            <option value="30d">1ヶ月以内</option>
+            <option value="7d">7日以内</option>
+            <option value="30d">30日以内</option>
             <option value="180d">半年以内</option>
+            <option value="all">全期間</option>
           </FilterSelect>
 
           <FilterSelect
             value={durationFilter}
             onChange={(e) =>
               setDurationFilter(
-                e.target.value as "short" | "medium" | "long" | "all"
+                e.target.value as 'short' | 'medium' | 'long' | 'all'
               )
             }
             disabled={isSearching || !broadcasterId}
@@ -603,44 +740,38 @@ function App() {
             type="submit"
             disabled={isSearching || !streamerName.trim()}
           >
-            {isSearching ? "検索中..." : "検索"}
+            {isSearching ? '検索中...' : '検索'}
           </SearchButton>
         </SearchForm>
 
         {loading && <div>読み込み中...</div>}
-        {error && <div style={{ color: "#ff4747" }}>{error}</div>}
+        {error && <div style={{ color: '#ff4747' }}>{error}</div>}
         {currentClip && (
           <>
             <ClipContainer>
               <ClipEmbed>
-                <NavigationButton
-                  className="prev"
-                  onClick={playPreviousClip}
-                  disabled={currentClipIndex === 0}
-                >
+                <NavigationButton className="prev" onClick={playPreviousClip}>
                   ＜
                 </NavigationButton>
-                <NavigationButton
-                  className="next"
-                  onClick={handleNextClip}
-                  disabled={
-                    !hasMoreClips && currentClipIndex === clips.length - 1
-                  }
-                >
+                <NavigationButton className="next" onClick={handleNextClip}>
                   ＞
                 </NavigationButton>
                 <ClipIframe
                   ref={playerRef}
-                  src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&autoplay=true&muted=false&controls=false&playbackRateControls=false&seekable=false&preload=auto`}
+                  title="Twitch Clip Player"
+                  src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=false&playbackRateControls=false&seekable=false&preload=auto`}
                   allowFullScreen
                   allow="autoplay"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  loading="lazy"
+                  referrerPolicy="origin"
                 />
               </ClipEmbed>
               <ClipInfo>
                 <ClipTitle>{currentClip.title}</ClipTitle>
                 <ClipMeta>
                   視聴回数: {currentClip.view_count.toLocaleString()} •
-                  再生時間: {currentClip.duration}秒 • 作成日時:{" "}
+                  再生時間: {currentClip.duration}秒 • 作成日時:{' '}
                   {formatDate(currentClip.created_at)}
                 </ClipMeta>
               </ClipInfo>
@@ -656,7 +787,7 @@ function App() {
               />
               <ClipLinkTitle>{currentClip.title}</ClipLinkTitle>
               <ClipLinkMeta>
-                配信者: {currentClip.broadcaster_name} • 作成者:{" "}
+                配信者: {currentClip.broadcaster_name} • 作成者:{' '}
                 {currentClip.creator_name} • 再生時間: {currentClip.duration}秒
                 • {formatDate(currentClip.created_at)}
               </ClipLinkMeta>
