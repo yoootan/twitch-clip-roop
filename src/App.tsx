@@ -256,7 +256,6 @@ function App() {
   const [durationFilter, setDurationFilter] = useState<
     'short' | 'medium' | 'long' | 'all'
   >('all');
-  const [totalClips, setTotalClips] = useState<number>(0);
 
   // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
   const filterClips = useCallback(
@@ -364,7 +363,6 @@ function App() {
         total = response.data.data.length;
       }
 
-      setTotalClips(total);
       return total;
     } catch (err) {
       return 0;
@@ -516,7 +514,6 @@ function App() {
     setBroadcasterId(null);
     setClips([]);
     setCurrentClipIndex(0);
-    setTotalClips(0);
 
     try {
       const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
@@ -599,7 +596,6 @@ function App() {
           const estimatedTotal = hasNextPage
             ? Math.max(100, filteredClips.length)
             : filteredClips.length;
-          setTotalClips(estimatedTotal);
         } else {
           setError('クリップが見つかりませんでした。');
         }
@@ -660,7 +656,6 @@ function App() {
       setCursor(null);
       setClips([]);
       setCurrentClipIndex(0);
-      setTotalClips(0);
       fetchTotalClips().then(() => fetchClips(null));
     }
   }, [broadcasterId, fetchTotalClips, fetchClips]);
