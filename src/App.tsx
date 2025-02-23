@@ -592,10 +592,6 @@ function App() {
           const hasNextPage = !!initialResponse.data.pagination?.cursor;
           setHasMoreClips(hasNextPage);
           setCursor(initialResponse.data.pagination?.cursor || null);
-
-          const estimatedTotal = hasNextPage
-            ? Math.max(100, filteredClips.length)
-            : filteredClips.length;
         } else {
           setError('クリップが見つかりませんでした。');
         }
