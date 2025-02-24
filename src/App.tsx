@@ -3,6 +3,27 @@ import styled from 'styled-components';
 import axios from 'axios';
 import './App.css';
 
+// Google Analytics用の型定義
+declare global {
+  interface Window {
+    gtag: (
+      type: string,
+      action: string,
+      params?: { [key: string]: string | number | boolean | null }
+    ) => void;
+  }
+}
+
+// Google Analyticsのイベント送信関数
+const sendGAEvent = (
+  action: string,
+  params?: { [key: string]: string | number | boolean | null }
+) => {
+  if (window.gtag) {
+    window.gtag('event', action, params);
+  }
+};
+
 interface TwitchClip {
   id: string;
   embed_url: string;
@@ -461,6 +482,9 @@ function App() {
   );
 
   const playNextClip = useCallback(async () => {
+    // Google Analyticsイベントの送信
+    sendGAEvent('play_next_clip');
+
     const nextIndex = currentClipIndex + 1;
 
     if (nextIndex < clips.length) {
@@ -495,6 +519,9 @@ function App() {
   }, [currentClipIndex, clips, hasMoreClips, cursor, fetchClips]);
 
   const playPreviousClip = () => {
+    // Google Analyticsイベントの送信
+    sendGAEvent('play_previous_clip');
+
     const prevIndex = currentClipIndex - 1;
     if (prevIndex >= 0) {
       setCurrentClip(clips[prevIndex]);
@@ -505,6 +532,11 @@ function App() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!streamerName.trim()) return;
+
+    // Google Analyticsイベントの送信
+    sendGAEvent('search_streamer', {
+      streamer_name: streamerName.trim(),
+    });
 
     setLoading(true);
     setError(null);
@@ -667,6 +699,29 @@ function App() {
     });
   };
 
+  const handleFilterChange = (
+    type: 'sortBy' | 'timeFilter' | 'durationFilter',
+    value: string
+  ) => {
+    // Google Analyticsイベントの送信
+    sendGAEvent('filter_change', {
+      filter_type: type,
+      filter_value: value,
+    });
+
+    switch (type) {
+      case 'sortBy':
+        setSortBy(value as 'views' | 'created_at' | 'duration');
+        break;
+      case 'timeFilter':
+        setTimeFilter(value as '24h' | '7d' | '30d' | '180d' | 'all');
+        break;
+      case 'durationFilter':
+        setDurationFilter(value as 'short' | 'medium' | 'long' | 'all');
+        break;
+    }
+  };
+
   return (
     <Container>
       <Header>
@@ -677,9 +732,7 @@ function App() {
         <FilterContainer>
           <FilterSelect
             value={sortBy}
-            onChange={(e) =>
-              setSortBy(e.target.value as 'views' | 'created_at' | 'duration')
-            }
+            onChange={(e) => handleFilterChange('sortBy', e.target.value)}
             disabled={isSearching || !broadcasterId}
           >
             <option value="created_at">新しい順</option>
@@ -689,11 +742,7 @@ function App() {
 
           <FilterSelect
             value={timeFilter}
-            onChange={(e) =>
-              setTimeFilter(
-                e.target.value as '24h' | '7d' | '30d' | '180d' | 'all'
-              )
-            }
+            onChange={(e) => handleFilterChange('timeFilter', e.target.value)}
             disabled={isSearching || !broadcasterId}
           >
             <option value="24h">24時間以内</option>
@@ -706,9 +755,7 @@ function App() {
           <FilterSelect
             value={durationFilter}
             onChange={(e) =>
-              setDurationFilter(
-                e.target.value as 'short' | 'medium' | 'long' | 'all'
-              )
+              handleFilterChange('durationFilter', e.target.value)
             }
             disabled={isSearching || !broadcasterId}
           >
