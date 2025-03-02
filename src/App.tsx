@@ -44,6 +44,61 @@ interface TwitchApiParams {
   ended_at?: string;
 }
 
+// 言語設定の型定義を追加
+type Language = 'ja' | 'en';
+
+// 翻訳用のオブジェクト
+const translations = {
+  ja: {
+    title: 'Twitch Clip Roop',
+    subtitle: 'お気に入りの配信者のクリップが流れ続けます',
+    searchPlaceholder: '配信者IDを入力（例：k4sen、stylishnoob4）',
+    searchButton: '検索',
+    searching: '検索中...',
+    sortNew: '新しい順',
+    sortViews: '視聴回数順',
+    sortDuration: '長さ順',
+    time24h: '24時間以内',
+    time7d: '7日以内',
+    time30d: '30日以内',
+    time180d: '半年以内',
+    timeAll: '全期間',
+    durationAll: 'すべての長さ',
+    durationShort: '30秒以内',
+    durationMedium: '30秒〜1分',
+    durationLong: '1分以上',
+    views: '視聴回数',
+    duration: '再生時間',
+    createdAt: '作成日時',
+    broadcaster: '配信者',
+    creator: '作成者',
+  },
+  en: {
+    title: 'Twitch Clip Roop',
+    subtitle: 'Continuous playback of your favorite streamers clips',
+    searchPlaceholder: 'Enter streamer ID (e.g., k4sen, stylishnoob4)',
+    searchButton: 'Search',
+    searching: 'Searching...',
+    sortNew: 'Newest',
+    sortViews: 'Most Viewed',
+    sortDuration: 'Duration',
+    time24h: 'Last 24 Hours',
+    time7d: 'Last 7 Days',
+    time30d: 'Last 30 Days',
+    time180d: 'Last 180 Days',
+    timeAll: 'All Time',
+    durationAll: 'All Lengths',
+    durationShort: 'Under 30s',
+    durationMedium: '30s - 1min',
+    durationLong: 'Over 1min',
+    views: 'views',
+    duration: 'duration',
+    createdAt: 'created at',
+    broadcaster: 'Broadcaster',
+    creator: 'Creator',
+  },
+};
+
 const Container = styled.div`
   background-color: #18181b;
   min-height: 100vh;
@@ -256,6 +311,25 @@ const FilterSelect = styled.select`
   }
 `;
 
+// 言語切り替えボタンのスタイル
+const LanguageButton = styled.button`
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  background-color: #1f1f23;
+  color: #efeff1;
+  border: 1px solid #303032;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #9147ff;
+    background-color: #2f2f35;
+  }
+`;
+
 function App() {
   const [streamerName, setStreamerName] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -277,6 +351,8 @@ function App() {
   const [durationFilter, setDurationFilter] = useState<
     'short' | 'medium' | 'long' | 'all'
   >('all');
+  const [language, setLanguage] = useState<Language>('ja');
+  const t = translations[language];
 
   // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
   const filterClips = useCallback(
@@ -722,11 +798,22 @@ function App() {
     }
   };
 
+  const toggleLanguage = () => {
+    setLanguage((prev) => (prev === 'ja' ? 'en' : 'ja'));
+    // Google Analyticsイベントの送信
+    sendGAEvent('change_language', {
+      language: language === 'ja' ? 'en' : 'ja',
+    });
+  };
+
   return (
     <Container>
       <Header>
-        <Title>Twitch Clip Roop</Title>
-        <Subtitle>お気に入りの配信者のクリップが流れ続けます</Subtitle>
+        <Title>{t.title}</Title>
+        <Subtitle>{t.subtitle}</Subtitle>
+        <LanguageButton onClick={toggleLanguage}>
+          {language === 'ja' ? 'English' : '日本語'}
+        </LanguageButton>
       </Header>
       <MainContent>
         <FilterContainer>
@@ -735,9 +822,9 @@ function App() {
             onChange={(e) => handleFilterChange('sortBy', e.target.value)}
             disabled={isSearching || !broadcasterId}
           >
-            <option value="created_at">新しい順</option>
-            <option value="views">視聴回数順</option>
-            <option value="duration">長さ順</option>
+            <option value="created_at">{t.sortNew}</option>
+            <option value="views">{t.sortViews}</option>
+            <option value="duration">{t.sortDuration}</option>
           </FilterSelect>
 
           <FilterSelect
@@ -745,11 +832,11 @@ function App() {
             onChange={(e) => handleFilterChange('timeFilter', e.target.value)}
             disabled={isSearching || !broadcasterId}
           >
-            <option value="24h">24時間以内</option>
-            <option value="7d">7日以内</option>
-            <option value="30d">30日以内</option>
-            <option value="180d">半年以内</option>
-            <option value="all">全期間</option>
+            <option value="24h">{t.time24h}</option>
+            <option value="7d">{t.time7d}</option>
+            <option value="30d">{t.time30d}</option>
+            <option value="180d">{t.time180d}</option>
+            <option value="all">{t.timeAll}</option>
           </FilterSelect>
 
           <FilterSelect
@@ -759,17 +846,17 @@ function App() {
             }
             disabled={isSearching || !broadcasterId}
           >
-            <option value="all">すべての長さ</option>
-            <option value="short">30秒以内</option>
-            <option value="medium">30秒〜1分</option>
-            <option value="long">1分以上</option>
+            <option value="all">{t.durationAll}</option>
+            <option value="short">{t.durationShort}</option>
+            <option value="medium">{t.durationMedium}</option>
+            <option value="long">{t.durationLong}</option>
           </FilterSelect>
         </FilterContainer>
 
         <SearchForm onSubmit={handleSearch}>
           <SearchInput
             type="text"
-            placeholder="配信者IDを入力（例：k4sen、stylishnoob4）"
+            placeholder={t.searchPlaceholder}
             value={streamerName}
             onChange={(e) => setStreamerName(e.target.value)}
             disabled={isSearching}
@@ -778,7 +865,7 @@ function App() {
             type="submit"
             disabled={isSearching || !streamerName.trim()}
           >
-            {isSearching ? '検索中...' : '検索'}
+            {isSearching ? t.searching : t.searchButton}
           </SearchButton>
         </SearchForm>
 
@@ -808,8 +895,8 @@ function App() {
               <ClipInfo>
                 <ClipTitle>{currentClip.title}</ClipTitle>
                 <ClipMeta>
-                  視聴回数: {currentClip.view_count.toLocaleString()} •
-                  再生時間: {currentClip.duration}秒 • 作成日時:{' '}
+                  {t.views}: {currentClip.view_count.toLocaleString()} •
+                  {t.duration}: {currentClip.duration}秒 •{t.createdAt}:{' '}
                   {formatDate(currentClip.created_at)}
                 </ClipMeta>
               </ClipInfo>
@@ -825,9 +912,9 @@ function App() {
               />
               <ClipLinkTitle>{currentClip.title}</ClipLinkTitle>
               <ClipLinkMeta>
-                配信者: {currentClip.broadcaster_name} • 作成者:{' '}
-                {currentClip.creator_name} • 再生時間: {currentClip.duration}秒
-                • {formatDate(currentClip.created_at)}
+                {t.broadcaster}: {currentClip.broadcaster_name} •{t.creator}:{' '}
+                {currentClip.creator_name} •{t.duration}: {currentClip.duration}
+                秒 •{t.createdAt}: {formatDate(currentClip.created_at)}
               </ClipLinkMeta>
             </ClipLink>
           </>
