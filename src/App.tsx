@@ -20,7 +20,14 @@ const sendGAEvent = (
   params?: { [key: string]: string | number | boolean | null }
 ) => {
   if (window.gtag) {
-    window.gtag('event', action, params);
+    // 基本的なイベントパラメータ
+    const baseParams = {
+      ...params,
+      language: navigator.language, // ブラウザの言語設定
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, // タイムゾーン
+    };
+
+    window.gtag('event', action, baseParams);
   }
 };
 
@@ -351,7 +358,10 @@ function App() {
   const [durationFilter, setDurationFilter] = useState<
     'short' | 'medium' | 'long' | 'all'
   >('all');
-  const [language, setLanguage] = useState<Language>('ja');
+  const [language, setLanguage] = useState<Language>(() => {
+    const browserLang = navigator.language.toLowerCase();
+    return browserLang.startsWith('ja') ? 'ja' : 'en';
+  });
   const t = translations[language];
 
   // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
