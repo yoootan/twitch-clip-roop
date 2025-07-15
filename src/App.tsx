@@ -373,7 +373,7 @@ const FilterSelect = styled.select`
 // 言語切り替えボタンのスタイル
 const LanguageButton = styled.button`
   position: fixed;
-  top: 20px;
+  top: 80px;
   right: 20px;
   padding: 8px 16px;
   background-color: #1f1f23;
