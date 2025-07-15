@@ -423,6 +423,18 @@ const getTwitchAccessToken = async (): Promise<string> => {
     const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
     const clientSecret = import.meta.env.VITE_TWITCH_CLIENT_SECRET;
 
+    // デバッグ用ログ
+    console.log('Environment variables check:');
+    console.log(
+      'VITE_TWITCH_CLIENT_ID:',
+      clientId ? `${clientId.substring(0, 5)}...` : 'undefined'
+    );
+    console.log(
+      'VITE_TWITCH_CLIENT_SECRET:',
+      clientSecret ? 'exists' : 'undefined'
+    );
+    console.log('All env vars:', Object.keys(import.meta.env));
+
     if (!clientId || !clientSecret) {
       throw new Error('Twitch Client ID or Client Secret is missing');
     }
@@ -433,9 +445,14 @@ const getTwitchAccessToken = async (): Promise<string> => {
       grant_type: 'client_credentials',
     });
 
+    console.log('Token obtained successfully');
     return response.data.access_token;
   } catch (error) {
     console.error('Failed to get Twitch access token:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Response data:', error.response?.data);
+      console.error('Response status:', error.response?.status);
+    }
     throw new Error('アクセストークンの取得に失敗しました');
   }
 };
