@@ -82,6 +82,29 @@ const translations = {
     play: '再生',
     pause: '一時停止',
     volume: '音量',
+    notification: 'お知らせ',
+    close: '閉じる',
+    updateTitle: 'アップデート情報',
+    updateContent: `
+      【2024年2月20日 更新内容】
+      
+      ● 認証エラーの修正
+      　- Twitchアクセストークンの自動取得機能を実装
+      　- トークン期限切れ時の自動更新に対応
+      
+      ● プロジェクト名の修正
+      　- "Twitch Clip Roop" → "Twitch Clip Loop" に修正
+      
+      ● UI/UXの改善
+      　- 独自の再生/一時停止ボタンを追加
+      　- 音量調整スライダーを実装
+      　- ファビコンとメタ情報を更新
+      
+      ● その他の改善
+      　- 言語切り替え機能（日本語/英語）
+      　- Google Analytics統合
+      　- パフォーマンスの最適化
+    `,
   },
   en: {
     title: 'Twitch Clip Loop',
@@ -109,6 +132,29 @@ const translations = {
     play: 'Play',
     pause: 'Pause',
     volume: 'Volume',
+    notification: 'Notification',
+    close: 'Close',
+    updateTitle: 'Update Information',
+    updateContent: `
+      【February 20, 2024 Updates】
+      
+      ● Authentication Error Fix
+      　- Implemented automatic Twitch access token retrieval
+      　- Added automatic token refresh on expiration
+      
+      ● Project Name Correction
+      　- Fixed "Twitch Clip Roop" → "Twitch Clip Loop"
+      
+      ● UI/UX Improvements
+      　- Added custom play/pause controls
+      　- Implemented volume slider
+      　- Updated favicon and meta information
+      
+      ● Other Improvements
+      　- Language switching (Japanese/English)
+      　- Google Analytics integration
+      　- Performance optimizations
+    `,
   },
 };
 
@@ -417,23 +463,105 @@ const VolumeSlider = styled.input`
   }
 `;
 
+const NotificationButton = styled.button`
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: transparent;
+  border: 2px solid #bf94ff;
+  color: #bf94ff;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  &:hover {
+    background: #bf94ff;
+    color: white;
+  }
+
+  &::before {
+    content: "🔔";
+    font-size: 1.1rem;
+  }
+`;
+
+const Modal = styled.div<{ isOpen: boolean }>`
+  display: ${({ isOpen }) => (isOpen ? 'block' : 'none')};
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+`;
+
+const ModalContent = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1f1f23;
+  border: 1px solid #303032;
+  border-radius: 8px;
+  padding: 2rem;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  color: #efeff1;
+`;
+
+const ModalHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #303032;
+`;
+
+const ModalTitle = styled.h2`
+  color: #bf94ff;
+  margin: 0;
+`;
+
+const CloseButton = styled.button`
+  background: transparent;
+  border: none;
+  color: #efeff1;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const UpdateContent = styled.div`
+  white-space: pre-line;
+  line-height: 1.6;
+  font-size: 0.95rem;
+`;
+
 // Twitchアクセストークンを取得する関数
 const getTwitchAccessToken = async (): Promise<string> => {
   try {
     const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
     const clientSecret = import.meta.env.VITE_TWITCH_CLIENT_SECRET;
-
-    // デバッグ用ログ
-    console.log('Environment variables check:');
-    console.log(
-      'VITE_TWITCH_CLIENT_ID:',
-      clientId ? `${clientId.substring(0, 5)}...` : 'undefined'
-    );
-    console.log(
-      'VITE_TWITCH_CLIENT_SECRET:',
-      clientSecret ? 'exists' : 'undefined'
-    );
-    console.log('All env vars:', Object.keys(import.meta.env));
 
     if (!clientId || !clientSecret) {
       throw new Error('Twitch Client ID or Client Secret is missing');
@@ -445,14 +573,9 @@ const getTwitchAccessToken = async (): Promise<string> => {
       grant_type: 'client_credentials',
     });
 
-    console.log('Token obtained successfully');
     return response.data.access_token;
   } catch (error) {
     console.error('Failed to get Twitch access token:', error);
-    if (axios.isAxiosError(error)) {
-      console.error('Response data:', error.response?.data);
-      console.error('Response status:', error.response?.status);
-    }
     throw new Error('アクセストークンの取得に失敗しました');
   }
 };
@@ -486,6 +609,7 @@ function App() {
   const [volume, setVolume] = useState(100);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [showNotification, setShowNotification] = useState(false);
 
   // アクセストークンを取得する関数
   const initializeAccessToken = useCallback(async () => {
@@ -1035,7 +1159,26 @@ function App() {
         <LanguageButton onClick={toggleLanguage}>
           {language === 'ja' ? 'English' : '日本語'}
         </LanguageButton>
+        <NotificationButton onClick={() => setShowNotification(true)}>
+          {t.notification}
+        </NotificationButton>
       </Header>
+
+      <Modal
+        isOpen={showNotification}
+        onClick={() => setShowNotification(false)}
+      >
+        <ModalContent onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+          <ModalHeader>
+            <ModalTitle>{t.updateTitle}</ModalTitle>
+            <CloseButton onClick={() => setShowNotification(false)}>
+              ×
+            </CloseButton>
+          </ModalHeader>
+          <UpdateContent>{t.updateContent}</UpdateContent>
+        </ModalContent>
+      </Modal>
+
       <MainContent>
         <FilterContainer>
           <FilterSelect
