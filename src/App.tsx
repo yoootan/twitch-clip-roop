@@ -79,9 +79,9 @@ const translations = {
     createdAt: '作成日時',
     broadcaster: '配信者',
     creator: '作成者',
-    play: '再生',
-    pause: '一時停止',
-    volume: '音量',
+    skipClip: '次のクリップ',
+    autoPlayOn: '自動再生: ON',
+    autoPlayOff: '自動再生: OFF',
     notification: 'お知らせ',
     close: '閉じる',
     updateTitle: 'アップデート情報',
@@ -135,9 +135,9 @@ const translations = {
     createdAt: 'created at',
     broadcaster: 'Broadcaster',
     creator: 'Creator',
-    play: 'Play',
-    pause: 'Pause',
-    volume: 'Volume',
+    skipClip: 'Skip Clip',
+    autoPlayOn: 'Auto Play: ON',
+    autoPlayOff: 'Auto Play: OFF',
     notification: 'Notification',
     close: 'Close',
     updateTitle: 'Update Information',
@@ -419,59 +419,35 @@ const ControlsContainer = styled.div`
   }
 `;
 
-const PlayPauseButton = styled.button`
-  background: transparent;
-  border: none;
+const AutoPlayButton = styled.button<{ $active: boolean }>`
+  background: ${(props) => (props.$active ? '#9146ff' : 'transparent')};
+  border: 1px solid #9146ff;
   color: white;
   cursor: pointer;
-  padding: 5px 10px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.2s;
 
   &:hover {
-    color: #bf94ff;
+    background: #bf94ff;
+    border-color: #bf94ff;
   }
 `;
 
-const VolumeControl = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-`;
+const SkipButton = styled.button`
+  background: transparent;
+  border: 1px solid #9146ff;
+  color: white;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.2s;
 
-const VolumeSlider = styled.input`
-  width: 100px;
-  height: 4px;
-  -webkit-appearance: none;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-  outline: none;
-
-  &::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-  }
-
-  &::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-  }
-
-  &:hover::-webkit-slider-thumb {
-    background: #bf94ff;
-  }
-
-  &:hover::-moz-range-thumb {
-    background: #bf94ff;
+  &:hover {
+    background: #9146ff;
+    border-color: #9146ff;
   }
 `;
 
@@ -618,8 +594,7 @@ function App() {
   });
   const t = translations[language];
   // 状態管理
-  const [isPaused, setIsPaused] = useState(false);
-  const [volume, setVolume] = useState(100);
+  const [isAutoPlayEnabled, setIsAutoPlayEnabled] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [showNotification, setShowNotification] = useState(false);
@@ -1047,7 +1022,7 @@ function App() {
   useEffect(() => {
     let timeoutId: number;
 
-    if (currentClip) {
+    if (currentClip && isAutoPlayEnabled) {
       timeoutId = window.setTimeout(
         () => {
           playNextClip();
@@ -1061,7 +1036,7 @@ function App() {
         }
       };
     }
-  }, [currentClip, playNextClip]);
+  }, [currentClip, playNextClip, isAutoPlayEnabled]);
 
   useEffect(() => {
     if (broadcasterId) {
@@ -1116,23 +1091,20 @@ function App() {
   };
 
   // 再生/一時停止の切り替え（UI表示のみ）
-  const togglePlayPause = () => {
-    // Google Analyticsイベントの送信
-    sendGAEvent(isPaused ? 'play_clip' : 'pause_clip');
+  const toggleAutoPlay = () => {
+    setIsAutoPlayEnabled(!isAutoPlayEnabled);
 
-    // UIの状態を切り替え（実際の制御は困難なため表示のみ）
-    setIsPaused(!isPaused);
+    // Google Analyticsイベントの送信
+    sendGAEvent('toggle_autoplay', {
+      auto_play_enabled: !isAutoPlayEnabled,
+    });
   };
 
-  // 音量調整（UI表示のみ）
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = Number(e.target.value);
-    setVolume(newVolume);
+  const skipToNextClip = () => {
+    playNextClip();
 
     // Google Analyticsイベントの送信
-    sendGAEvent('change_volume', {
-      volume: newVolume,
-    });
+    sendGAEvent('skip_clip_manual');
   };
 
   return (
@@ -1240,19 +1212,13 @@ function App() {
                   referrerPolicy="origin"
                 />
                 <ControlsContainer>
-                  <PlayPauseButton onClick={togglePlayPause}>
-                    {isPaused ? t.play : t.pause}
-                  </PlayPauseButton>
-                  <VolumeControl>
-                    <span>{t.volume}</span>
-                    <VolumeSlider
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={volume}
-                      onChange={handleVolumeChange}
-                    />
-                  </VolumeControl>
+                  <AutoPlayButton
+                    $active={isAutoPlayEnabled}
+                    onClick={toggleAutoPlay}
+                  >
+                    {isAutoPlayEnabled ? t.autoPlayOn : t.autoPlayOff}
+                  </AutoPlayButton>
+                  <SkipButton onClick={skipToNextClip}>{t.skipClip}</SkipButton>
                 </ControlsContainer>
               </ClipEmbed>
               <ClipInfo>
