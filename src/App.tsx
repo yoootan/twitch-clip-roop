@@ -451,7 +451,6 @@ function App() {
   const [hasMoreClips, setHasMoreClips] = useState(true);
   const [clips, setClips] = useState<TwitchClip[]>([]);
   const [currentClipIndex, setCurrentClipIndex] = useState(0);
-  const playerRef = useRef<HTMLIFrameElement>(null);
   const [sortBy, setSortBy] = useState<'views' | 'created_at' | 'duration'>(
     'created_at'
   );
