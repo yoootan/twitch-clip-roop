@@ -96,9 +96,15 @@ const translations = {
       　- "Twitch Clip Roop" → "Twitch Clip Loop" に修正
       
       ● UI/UXの改善
-      　- 独自の再生/一時停止ボタンを追加
-      　- 音量調整スライダーを実装
+      　- 再生/一時停止ボタンを追加（表示のみ）
+      　- 音量調整スライダーを追加（表示のみ）
       　- ファビコンとメタ情報を更新
+      
+      ● 重要なお知らせ
+      　- Twitchの埋め込みプレイヤーの制限により、
+      　  音量調整と一時停止機能は表示のみとなります
+      　- クリップの実際の制御はTwitchプレイヤーの
+      　  標準機能をご利用ください
       
       ● その他の改善
       　- 言語切り替え機能（日本語/英語）
@@ -146,9 +152,15 @@ const translations = {
       　- Fixed "Twitch Clip Roop" → "Twitch Clip Loop"
       
       ● UI/UX Improvements
-      　- Added custom play/pause controls
-      　- Implemented volume slider
+      　- Added play/pause button (display only)
+      　- Added volume slider (display only)
       　- Updated favicon and meta information
+      
+      ● Important Notice
+      　- Due to Twitch embedded player limitations,
+      　  volume and pause controls are display-only
+      　- Please use Twitch player's native controls
+      　  for actual clip control
       
       ● Other Improvements
       　- Language switching (Japanese/English)
@@ -605,6 +617,7 @@ function App() {
     return browserLang.startsWith('ja') ? 'ja' : 'en';
   });
   const t = translations[language];
+  // 状態管理
   const [isPaused, setIsPaused] = useState(false);
   const [volume, setVolume] = useState(100);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -1102,53 +1115,24 @@ function App() {
     });
   };
 
+  // 再生/一時停止の切り替え（UI表示のみ）
   const togglePlayPause = () => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
     // Google Analyticsイベントの送信
     sendGAEvent(isPaused ? 'play_clip' : 'pause_clip');
 
-    try {
-      // iframeにメッセージを送信
-      iframe.contentWindow?.postMessage(
-        {
-          eventName: isPaused ? 'play' : 'pause',
-          params: { clip: currentClip?.id },
-        },
-        '*'
-      );
-
-      setIsPaused(!isPaused);
-    } catch (error) {
-      console.error('Failed to toggle play/pause:', error);
-    }
+    // UIの状態を切り替え（実際の制御は困難なため表示のみ）
+    setIsPaused(!isPaused);
   };
 
+  // 音量調整（UI表示のみ）
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = Number(e.target.value);
     setVolume(newVolume);
-
-    const iframe = iframeRef.current;
-    if (!iframe) return;
 
     // Google Analyticsイベントの送信
     sendGAEvent('change_volume', {
       volume: newVolume,
     });
-
-    try {
-      // iframeにメッセージを送信
-      iframe.contentWindow?.postMessage(
-        {
-          eventName: 'setVolume',
-          params: { volume: newVolume / 100 },
-        },
-        '*'
-      );
-    } catch (error) {
-      console.error('Failed to change volume:', error);
-    }
   };
 
   return (
