@@ -57,8 +57,8 @@ type Language = 'ja' | 'en';
 // 翻訳用のオブジェクト
 const translations = {
   ja: {
-    title: 'Twitch Clip Roop',
-    subtitle: 'お気に入りの配信者のクリップが流れ続けます',
+    title: 'Twitch Clip Loop',
+    subtitle: 'お気に入りの配信者のクリップをループ再生',
     searchPlaceholder: '配信者IDを入力（例：k4sen、stylishnoob4）',
     searchButton: '検索',
     searching: '検索中...',
@@ -84,8 +84,8 @@ const translations = {
     volume: '音量',
   },
   en: {
-    title: 'Twitch Clip Roop',
-    subtitle: 'Continuous playback of your favorite streamers clips',
+    title: 'Twitch Clip Loop',
+    subtitle: 'Loop playback of your favorite streamers clips',
     searchPlaceholder: 'Enter streamer ID (e.g., k4sen, stylishnoob4)',
     searchButton: 'Search',
     searching: 'Searching...',

@@ -1,50 +1,46 @@
-# React + TypeScript + Vite
+# Twitch Clip Loop
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+お気に入りの配信者のTwitchクリップをループ再生できるウェブアプリケーションです。
 
-Currently, two official plugins are available:
+## 機能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 配信者IDで検索してクリップを取得
+- 複数のフィルター機能（時間順、視聴回数順、期間指定）
+- クリップの自動ループ再生
+- 独自実装の一時停止・音量調整機能
+- 日本語・英語の言語切り替え
+- Google Analytics統合
 
-## Expanding the ESLint configuration
+## 技術スタック
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+- React 19 + TypeScript
+- Vite
+- Styled Components
+- Axios
+- Twitch API
 
-- Configure the top-level `parserOptions` property like this:
+## 開発環境のセットアップ
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+# 依存関係のインストール
+npm install
+
+# 開発サーバーの起動
+npm run dev
+
+# ビルド
+npm run build
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+## 環境変数
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+以下の環境変数を設定してください：
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
 ```
+VITE_TWITCH_CLIENT_ID=your_twitch_client_id
+VITE_TWITCH_CLIENT_SECRET=your_twitch_client_secret
+```
+
+## ライセンス
+
+MIT License
