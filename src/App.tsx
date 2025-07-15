@@ -79,6 +79,9 @@ const translations = {
     createdAt: '作成日時',
     broadcaster: '配信者',
     creator: '作成者',
+    play: '再生',
+    pause: '一時停止',
+    volume: '音量',
   },
   en: {
     title: 'Twitch Clip Roop',
@@ -103,6 +106,9 @@ const translations = {
     createdAt: 'created at',
     broadcaster: 'Broadcaster',
     creator: 'Creator',
+    play: 'Play',
+    pause: 'Pause',
+    volume: 'Volume',
   },
 };
 
@@ -337,6 +343,103 @@ const LanguageButton = styled.button`
   }
 `;
 
+const ControlsContainer = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  ${ClipEmbed}:hover & {
+    opacity: 1;
+  }
+`;
+
+const PlayPauseButton = styled.button`
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  &:hover {
+    color: #bf94ff;
+  }
+`;
+
+const VolumeControl = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const VolumeSlider = styled.input`
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  &::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+
+  &:hover::-webkit-slider-thumb {
+    background: #bf94ff;
+  }
+
+  &:hover::-moz-range-thumb {
+    background: #bf94ff;
+  }
+`;
+
+// Twitchアクセストークンを取得する関数
+const getTwitchAccessToken = async (): Promise<string> => {
+  try {
+    const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
+    const clientSecret = import.meta.env.VITE_TWITCH_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error('Twitch Client ID or Client Secret is missing');
+    }
+
+    const response = await axios.post('https://id.twitch.tv/oauth2/token', {
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials',
+    });
+
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Failed to get Twitch access token:', error);
+    throw new Error('アクセストークンの取得に失敗しました');
+  }
+};
+
 function App() {
   const [streamerName, setStreamerName] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -363,6 +466,27 @@ function App() {
     return browserLang.startsWith('ja') ? 'ja' : 'en';
   });
   const t = translations[language];
+  const [isPaused, setIsPaused] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+
+  // アクセストークンを取得する関数
+  const initializeAccessToken = useCallback(async () => {
+    try {
+      const token = await getTwitchAccessToken();
+      setAccessToken(token);
+    } catch (error) {
+      setError(
+        '認証に失敗しました。しばらく時間をおいてから再度お試しください。'
+      );
+    }
+  }, []);
+
+  // アプリ起動時にアクセストークンを取得
+  useEffect(() => {
+    initializeAccessToken();
+  }, [initializeAccessToken]);
 
   // クリップのフィルタリング関数（期間フィルターを削除し、長さと並び替えのみに）
   const filterClips = useCallback(
@@ -406,11 +530,10 @@ function App() {
   );
 
   const fetchTotalClips = useCallback(async () => {
-    if (!broadcasterId) return 0;
+    if (!broadcasterId || !accessToken) return 0;
 
     try {
       const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
-      const accessToken = import.meta.env.VITE_TWITCH_ACCESS_TOKEN;
 
       const now = new Date();
       const filterTimes: Record<'24h' | '7d' | '30d' | '180d' | 'all', number> =
@@ -472,17 +595,25 @@ function App() {
 
       return total;
     } catch (err) {
+      // アクセストークンが無効な場合は再取得を試行
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        try {
+          await initializeAccessToken();
+          return 0; // 再取得後は次回の呼び出しで使用される
+        } catch (retryError) {
+          return 0;
+        }
+      }
       return 0;
     }
-  }, [broadcasterId, timeFilter]);
+  }, [broadcasterId, timeFilter, accessToken, initializeAccessToken]);
 
   const fetchClips = useCallback(
     async (after?: string | null) => {
-      if (!broadcasterId) return null;
+      if (!broadcasterId || !accessToken) return null;
 
       try {
         const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
-        const accessToken = import.meta.env.VITE_TWITCH_ACCESS_TOKEN;
 
         const now = new Date();
         const filterTimes: Record<
@@ -559,12 +690,23 @@ function App() {
         setHasMoreClips(false);
         return null;
       } catch (err) {
+        // アクセストークンが無効な場合は再取得を試行
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          try {
+            await initializeAccessToken();
+            setError('認証を更新しました。もう一度検索してください。');
+            return null;
+          } catch (retryError) {
+            setError('認証エラー: アクセストークンの更新に失敗しました。');
+            return null;
+          }
+        }
         setError('クリップの取得に失敗しました。');
         setHasMoreClips(false);
         return null;
       }
     },
-    [broadcasterId, timeFilter, filterClips]
+    [broadcasterId, timeFilter, filterClips, accessToken, initializeAccessToken]
   );
 
   const playNextClip = useCallback(async () => {
@@ -617,7 +759,7 @@ function App() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!streamerName.trim()) return;
+    if (!streamerName.trim() || !accessToken) return;
 
     // Google Analyticsイベントの送信
     sendGAEvent('search_streamer', {
@@ -635,7 +777,6 @@ function App() {
 
     try {
       const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
-      const accessToken = import.meta.env.VITE_TWITCH_ACCESS_TOKEN;
 
       const searchQuery = streamerName.trim();
 
@@ -719,7 +860,12 @@ function App() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         if (err.response?.status === 401) {
-          setError('認証エラー: アクセストークンが無効または期限切れです。');
+          try {
+            await initializeAccessToken();
+            setError('認証を更新しました。もう一度検索してください。');
+          } catch (retryError) {
+            setError('認証エラー: アクセストークンの更新に失敗しました。');
+          }
         } else if (err.response?.status === 400) {
           setError('リクエストエラー: パラメータが正しくありません。');
         } else {
@@ -816,6 +962,55 @@ function App() {
     });
   };
 
+  const togglePlayPause = () => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    // Google Analyticsイベントの送信
+    sendGAEvent(isPaused ? 'play_clip' : 'pause_clip');
+
+    try {
+      // iframeにメッセージを送信
+      iframe.contentWindow?.postMessage(
+        {
+          eventName: isPaused ? 'play' : 'pause',
+          params: { clip: currentClip?.id },
+        },
+        '*'
+      );
+
+      setIsPaused(!isPaused);
+    } catch (error) {
+      console.error('Failed to toggle play/pause:', error);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = Number(e.target.value);
+    setVolume(newVolume);
+
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    // Google Analyticsイベントの送信
+    sendGAEvent('change_volume', {
+      volume: newVolume,
+    });
+
+    try {
+      // iframeにメッセージを送信
+      iframe.contentWindow?.postMessage(
+        {
+          eventName: 'setVolume',
+          params: { volume: newVolume / 100 },
+        },
+        '*'
+      );
+    } catch (error) {
+      console.error('Failed to change volume:', error);
+    }
+  };
+
   return (
     <Container>
       <Header>
@@ -892,7 +1087,7 @@ function App() {
                   ＞
                 </NavigationButton>
                 <ClipIframe
-                  ref={playerRef}
+                  ref={iframeRef}
                   title="Twitch Clip Player"
                   src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=false&playbackRateControls=false&seekable=false&preload=auto`}
                   allowFullScreen
@@ -901,6 +1096,21 @@ function App() {
                   loading="lazy"
                   referrerPolicy="origin"
                 />
+                <ControlsContainer>
+                  <PlayPauseButton onClick={togglePlayPause}>
+                    {isPaused ? t.play : t.pause}
+                  </PlayPauseButton>
+                  <VolumeControl>
+                    <span>{t.volume}</span>
+                    <VolumeSlider
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={volume}
+                      onChange={handleVolumeChange}
+                    />
+                  </VolumeControl>
+                </ControlsContainer>
               </ClipEmbed>
               <ClipInfo>
                 <ClipTitle>{currentClip.title}</ClipTitle>
