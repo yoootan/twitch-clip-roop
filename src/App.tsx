@@ -86,30 +86,30 @@ const translations = {
     close: '閉じる',
     updateTitle: 'アップデート情報',
     updateContent: `
-      【2024年2月20日 更新内容】
+      【2024年2月21日 更新内容】
       
-      ● 認証エラーの修正
-      　- Twitchアクセストークンの自動取得機能を実装
-      　- トークン期限切れ時の自動更新に対応
+      ● Twitchネイティブコントロール有効化 🎉
+      　- プレイヤー内で音量調整が可能になりました
+      　- 再生/停止が正常に動作します
+      　- 再生速度調整（0.25x〜2.0x）
+      　- クリップ内のシーク機能
       
-      ● プロジェクト名の修正
-      　- "Twitch Clip Roop" → "Twitch Clip Loop" に修正
+      ● 新しいコントロール機能
+      　- 自動再生切り替え：ループ再生の制御
+      　- 手動スキップ：いつでも次のクリップへ
+      　- 機能しないUIを削除してスッキリ
       
-      ● UI/UXの改善
-      　- 再生/一時停止ボタンを追加（表示のみ）
-      　- 音量調整スライダーを追加（表示のみ）
-      　- ファビコンとメタ情報を更新
+      ● 使い方
+      　- プレイヤーにマウスを置くとTwitchコントロール表示
+      　- 音量スライダーで音量調整
+      　- 「自動再生: OFF」でループ停止
+      　- 「次のクリップ」で手動スキップ
       
-      ● 重要なお知らせ
-      　- Twitchの埋め込みプレイヤーの制限により、
-      　  音量調整と一時停止機能は表示のみとなります
-      　- クリップの実際の制御はTwitchプレイヤーの
-      　  標準機能をご利用ください
-      
-      ● その他の改善
-      　- 言語切り替え機能（日本語/英語）
-      　- Google Analytics統合
-      　- パフォーマンスの最適化
+      ● 基本機能
+      　- Twitchクリップの自動ループ再生
+      　- 期間・長さ・並び順でのフィルタリング
+      　- 配信者のクリップ検索
+      　- 日本語・英語切り替え
     `,
   },
   en: {
@@ -142,30 +142,30 @@ const translations = {
     close: 'Close',
     updateTitle: 'Update Information',
     updateContent: `
-      【February 20, 2024 Updates】
+      【February 21, 2024 Updates】
       
-      ● Authentication Error Fix
-      　- Implemented automatic Twitch access token retrieval
-      　- Added automatic token refresh on expiration
+      ● Native Twitch Controls Enabled 🎉
+      　- Volume adjustment now works directly in player
+      　- Play/pause functionality fully operational
+      　- Playback speed control (0.25x - 2.0x)
+      　- Seek functionality within clips
       
-      ● Project Name Correction
-      　- Fixed "Twitch Clip Roop" → "Twitch Clip Loop"
+      ● New Control Features
+      　- Auto-play toggle: Control loop behavior
+      　- Manual skip: Jump to next clip anytime
+      　- Removed non-functional UI elements
       
-      ● UI/UX Improvements
-      　- Added play/pause button (display only)
-      　- Added volume slider (display only)
-      　- Updated favicon and meta information
+      ● How to Use
+      　- Hover over player to see Twitch controls
+      　- Use volume slider to adjust sound
+      　- Click "Auto Play: OFF" to stop looping
+      　- Click "Skip Clip" to manually advance
       
-      ● Important Notice
-      　- Due to Twitch embedded player limitations,
-      　  volume and pause controls are display-only
-      　- Please use Twitch player's native controls
-      　  for actual clip control
-      
-      ● Other Improvements
+      ● Previous Improvements
+      　- Authentication error fixes
+      　- Project name correction
       　- Language switching (Japanese/English)
       　- Google Analytics integration
-      　- Performance optimizations
     `,
   },
 };
@@ -1204,7 +1204,7 @@ function App() {
                 <ClipIframe
                   ref={iframeRef}
                   title="Twitch Clip Player"
-                  src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=false&playbackRateControls=false&seekable=false&preload=auto`}
+                  src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=true&playbackRateControls=true&seekable=true&preload=auto`}
                   allowFullScreen
                   allow="autoplay"
                   sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
