@@ -11,6 +11,8 @@ declare global {
       action: string,
       params?: { [key: string]: string | number | boolean | null }
     ) => void;
+    resetTimerForSeek?: (newRemainingTime: number) => void;
+    currentClipDuration?: number;
   }
 }
 
@@ -854,45 +856,45 @@ function App() {
       playNextClip();
     }, transitionTime);
 
-    // 定期的にTwitchプレイヤーからのメッセージをチェック（フォールバック）
+    // setupAutoTransition関数の最後でタイマーを再設定する関数
+    const resetTimerForSeek = (newRemainingTime: number) => {
+      console.log('Resetting timer for remaining time:', newRemainingTime);
 
-    // 1秒ごとにチェックして、手動シークが発生した可能性を監視
-    timerCheckInterval.current = window.setInterval(() => {
-      if (!autoPlayEnabled || !currentClip) {
-        if (timerCheckInterval.current) {
-          window.clearInterval(timerCheckInterval.current);
-        }
-        return;
+      // 既存のタイマーをクリア
+      if (autoTransitionTimer.current) {
+        window.clearTimeout(autoTransitionTimer.current);
+      }
+      if (timerCheckInterval.current) {
+        window.clearInterval(timerCheckInterval.current);
       }
 
-      const elapsed = Date.now() - (timerStartTime.current || 0);
-      const expectedRemaining = transitionTime - elapsed;
+      // 新しいタイマーを設定
+      if (newRemainingTime > 2) {
+        const newTransitionTime = Math.max(1000, (newRemainingTime - 2) * 1000);
+        timerStartTime.current = Date.now();
 
-      // 残り時間が5秒以下になったら、より短い間隔でチェック
-      if (expectedRemaining <= 5000 && expectedRemaining > 0) {
-        // より精密なチェックのために間隔を短くする
-        if (timerCheckInterval.current) {
-          window.clearInterval(timerCheckInterval.current);
-        }
+        autoTransitionTimer.current = window.setTimeout(() => {
+          console.log('Timer from resetTimerForSeek triggered');
+          playNextClip();
+        }, newTransitionTime);
+      } else if (newRemainingTime > 0) {
+        // 残り2秒以下の場合
+        const newTransitionTime = Math.max(500, newRemainingTime * 500);
+        timerStartTime.current = Date.now();
 
-        // 300ms間隔でチェック
-        timerCheckInterval.current = window.setInterval(() => {
-          const currentElapsed = Date.now() - (timerStartTime.current || 0);
-          const currentRemaining = transitionTime - currentElapsed;
-
-          if (currentRemaining <= 200) {
-            // 残り200ms以下で次のクリップに遷移
-            if (timerCheckInterval.current) {
-              window.clearInterval(timerCheckInterval.current);
-            }
-            if (autoTransitionTimer.current) {
-              window.clearTimeout(autoTransitionTimer.current);
-            }
-            playNextClip();
-          }
-        }, 300);
+        autoTransitionTimer.current = window.setTimeout(() => {
+          console.log('Short timer from resetTimerForSeek triggered');
+          playNextClip();
+        }, newTransitionTime);
       }
-    }, 1000);
+    };
+
+    // クリップがシークされたかを監視する関数を開始時に設定
+    if (currentClip) {
+      // グローバルにアクセス可能にして、コンソールからも呼べるように
+      window.resetTimerForSeek = resetTimerForSeek;
+      window.currentClipDuration = currentClip.duration;
+    }
   }, [currentClip, playNextClip, autoPlayEnabled]);
 
   // Twitch埋め込みプレイヤーからのメッセージを監視
@@ -901,13 +903,37 @@ function App() {
       // 自動再生が無効の場合は何もしない
       if (!autoPlayEnabled) return;
 
+      // デバッグ用: すべてのメッセージをログ出力
+      console.log('Message received:', {
+        origin: event.origin,
+        data: event.data,
+      });
+
       // Twitchクリッププレイヤーからのメッセージを処理
       if (event.origin === 'https://clips.twitch.tv') {
         try {
-          const data = JSON.parse(event.data);
+          const data =
+            typeof event.data === 'string'
+              ? JSON.parse(event.data)
+              : event.data;
 
-          // クリップ終了イベントを検知
-          if (data.type === 'video-ended' || data.type === 'ended') {
+          console.log('Twitch player message:', data);
+
+          // より広範なイベントタイプをチェック
+          const eventType =
+            data.type || data.event || data.eventType || data.name;
+          console.log('Event type detected:', eventType);
+
+          // クリップ終了イベントを検知（より多くのパターンに対応）
+          if (
+            eventType === 'video-ended' ||
+            eventType === 'ended' ||
+            eventType === 'complete' ||
+            eventType === 'finish' ||
+            data.playbackStatus === 'ended' ||
+            data.status === 'ended'
+          ) {
+            console.log('Video ended event detected');
             // 既存のタイマーをクリアして即座に次のクリップに遷移
             if (autoTransitionTimer.current) {
               window.clearTimeout(autoTransitionTimer.current);
@@ -918,18 +944,34 @@ function App() {
             playNextClip();
           }
 
-          // シーク（時間変更）イベントを検知した場合、タイマーをリセット
+          // シーク（時間変更）イベントを検知した場合、タイマーをリセット（より多くのパターンに対応）
+          const currentTime =
+            data.currentTime ||
+            data.time ||
+            data.position ||
+            data.playbackPosition ||
+            data.seconds;
+
           if (
-            data.type === 'video-seek' ||
-            data.type === 'seeked' ||
-            data.type === 'timeupdate'
+            eventType === 'video-seek' ||
+            eventType === 'seeked' ||
+            eventType === 'seek' ||
+            eventType === 'timeupdate' ||
+            eventType === 'progress' ||
+            eventType === 'playback-position' ||
+            currentTime !== undefined
           ) {
+            console.log('Seek event detected:', data);
+            console.log('Current time detected:', currentTime);
+
             // タイマーをリセットして、残り時間を再計算
-            if (currentClip && data.currentTime !== undefined) {
+            if (currentClip && currentTime !== undefined) {
               const remainingTime = Math.max(
                 0,
-                currentClip.duration - data.currentTime
+                currentClip.duration - currentTime
               );
+
+              console.log('Remaining time after seek:', remainingTime);
 
               // 既存のタイマーをクリア
               if (autoTransitionTimer.current) {
@@ -945,24 +987,36 @@ function App() {
                   1000,
                   (remainingTime - 2) * 1000
                 );
+                console.log(
+                  'Setting new timer for:',
+                  newTransitionTime / 1000,
+                  'seconds'
+                );
                 timerStartTime.current = Date.now();
 
                 autoTransitionTimer.current = window.setTimeout(() => {
+                  console.log('Timer triggered - playing next clip');
                   playNextClip();
                 }, newTransitionTime);
               } else if (remainingTime > 0) {
                 // 残り2秒以下の場合は少し待ってから遷移
                 const newTransitionTime = Math.max(500, remainingTime * 500);
+                console.log(
+                  'Setting short timer for:',
+                  newTransitionTime / 1000,
+                  'seconds'
+                );
                 timerStartTime.current = Date.now();
 
                 autoTransitionTimer.current = window.setTimeout(() => {
+                  console.log('Short timer triggered - playing next clip');
                   playNextClip();
                 }, newTransitionTime);
               }
             }
           }
         } catch (error) {
-          // JSON解析エラーは無視
+          console.error('Error processing message:', error);
         }
       }
     };
