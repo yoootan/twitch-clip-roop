@@ -56,6 +56,13 @@ interface TwitchApiParams {
 // 言語設定の型定義を追加
 type Language = 'ja' | 'en';
 
+// Window オブジェクトの型拡張
+declare global {
+  interface Window {
+    debugAutoTransition?: () => void;
+  }
+}
+
 // 翻訳用のオブジェクト
 const translations = {
   ja: {
@@ -551,12 +558,10 @@ function App() {
   const [showNotification, setShowNotification] = useState(false);
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
 
-  // 自動遷移用のタイマーID
+  // 自動遷移用のタイマー管理
   const autoTransitionTimer = useRef<number | null>(null);
-  // タイマー開始時刻を記録
-  const timerStartTime = useRef<number | null>(null);
-  // 定期的にタイマーをチェックするためのインターバル
   const timerCheckInterval = useRef<number | null>(null);
+  const pollingInterval = useRef<number | null>(null);
 
   // アクセストークンを取得する関数
   const initializeAccessToken = useCallback(async () => {
@@ -833,76 +838,95 @@ function App() {
     }
   }, [currentClipIndex, clips, hasMoreClips, cursor, fetchClips]);
 
-  // 自動遷移タイマーを設定する関数
-  const setupAutoTransition = useCallback(() => {
-    // 既存のタイマーとインターバルをクリア
-    if (autoTransitionTimer.current) {
-      window.clearTimeout(autoTransitionTimer.current);
-    }
-    if (timerCheckInterval.current) {
-      window.clearInterval(timerCheckInterval.current);
-    }
-
-    // 自動再生が無効の場合はタイマーを設定しない
-    if (!autoPlayEnabled || !currentClip) return;
-
-    // タイマー開始時刻を記録
-    timerStartTime.current = Date.now();
-
-    // クリップの長さ - 2秒で次のクリップに遷移（2秒前に遷移）
-    const transitionTime = Math.max(1000, (currentClip.duration - 2) * 1000);
-
-    autoTransitionTimer.current = window.setTimeout(() => {
-      playNextClip();
-    }, transitionTime);
-
-    // setupAutoTransition関数の最後でタイマーを再設定する関数
-    const resetTimerForSeek = (newRemainingTime: number) => {
-      console.log('Resetting timer for remaining time:', newRemainingTime);
-
-      // 既存のタイマーをクリア
+  // 自動遷移のセットアップ（より確実なポーリングベース）
+  useEffect(() => {
+    if (!autoPlayEnabled || !currentClip) {
+      // 自動再生が無効な場合は全てのタイマーをクリア
       if (autoTransitionTimer.current) {
         window.clearTimeout(autoTransitionTimer.current);
+        autoTransitionTimer.current = null;
       }
       if (timerCheckInterval.current) {
         window.clearInterval(timerCheckInterval.current);
+        timerCheckInterval.current = null;
       }
-
-      // 新しいタイマーを設定
-      if (newRemainingTime > 2) {
-        const newTransitionTime = Math.max(1000, (newRemainingTime - 2) * 1000);
-        timerStartTime.current = Date.now();
-
-        autoTransitionTimer.current = window.setTimeout(() => {
-          console.log('Timer from resetTimerForSeek triggered');
-          playNextClip();
-        }, newTransitionTime);
-      } else if (newRemainingTime > 0) {
-        // 残り2秒以下の場合
-        const newTransitionTime = Math.max(500, newRemainingTime * 500);
-        timerStartTime.current = Date.now();
-
-        autoTransitionTimer.current = window.setTimeout(() => {
-          console.log('Short timer from resetTimerForSeek triggered');
-          playNextClip();
-        }, newTransitionTime);
+      if (pollingInterval.current) {
+        window.clearInterval(pollingInterval.current);
+        pollingInterval.current = null;
       }
+      return;
+    }
+
+    console.log('Setting up auto transition for clip:', currentClip.title);
+
+    // プレイヤーのiframeを取得
+    const getPlayerIframe = (): HTMLIFrameElement | null => {
+      const iframe = document.querySelector(
+        'iframe[src*="clips.twitch.tv"]'
+      ) as HTMLIFrameElement;
+      return iframe;
     };
 
-    // クリップがシークされたかを監視する関数を開始時に設定
-    if (currentClip) {
-      // グローバルにアクセス可能にして、コンソールからも呼べるように
-      window.resetTimerForSeek = resetTimerForSeek;
-      window.currentClipDuration = currentClip.duration;
-    }
-  }, [currentClip, playNextClip, autoPlayEnabled]);
+    // より確実なポーリングベースのアプローチ
+    const setupPollingBasedTransition = () => {
+      const clipDuration = currentClip.duration;
+      const transitionBuffer = 2; // 2秒前に遷移
+      const effectiveDuration = Math.max(1, clipDuration - transitionBuffer);
 
-  // Twitch埋め込みプレイヤーからのメッセージを監視
-  useEffect(() => {
+      console.log(
+        `Setting timer: Clip duration ${clipDuration}s → Will transition after ${effectiveDuration}s (${transitionBuffer}s before clip ends)`
+      );
+
+      // メインタイマー（クリップ終了2秒前）
+      autoTransitionTimer.current = window.setTimeout(() => {
+        console.log('Main timer triggered - playing next clip');
+        playNextClip();
+      }, effectiveDuration * 1000);
+
+      // ポーリングでiframeの状態をチェック（フォールバック）
+      let pollCount = 0;
+      const maxPolls = effectiveDuration * 2; // 0.5秒間隔で最大duration*2回
+
+      pollingInterval.current = window.setInterval(() => {
+        pollCount++;
+
+        const iframe = getPlayerIframe();
+        if (iframe) {
+          try {
+            // iframeが存在することを確認
+            const iframeDoc =
+              iframe.contentDocument || iframe.contentWindow?.document;
+            if (iframeDoc) {
+              console.log(`Polling check ${pollCount}: iframe accessible`);
+            }
+          } catch (e) {
+            // Cross-origin制限で正常
+            console.log(
+              `Polling check ${pollCount}: iframe cross-origin (normal)`
+            );
+          }
+        }
+
+        // 最大ポーリング回数に達した場合（フォールバック）
+        if (pollCount >= maxPolls) {
+          console.log(
+            'Polling limit reached - triggering next clip as fallback'
+          );
+          if (pollingInterval.current) {
+            window.clearInterval(pollingInterval.current);
+            pollingInterval.current = null;
+          }
+          if (autoTransitionTimer.current) {
+            window.clearTimeout(autoTransitionTimer.current);
+            autoTransitionTimer.current = null;
+          }
+          playNextClip();
+        }
+      }, 500); // 0.5秒間隔
+    };
+
+    // PostMessageのリスナーも維持（念のため）
     const handleMessage = (event: MessageEvent) => {
-      // 自動再生が無効の場合は何もしない
-      if (!autoPlayEnabled) return;
-
       // デバッグ用: すべてのメッセージをログ出力
       console.log('Message received:', {
         origin: event.origin,
@@ -924,7 +948,7 @@ function App() {
             data.type || data.event || data.eventType || data.name;
           console.log('Event type detected:', eventType);
 
-          // クリップ終了イベントを検知（より多くのパターンに対応）
+          // 動画終了イベントの検知
           if (
             eventType === 'video-ended' ||
             eventType === 'ended' ||
@@ -933,117 +957,117 @@ function App() {
             data.playbackStatus === 'ended' ||
             data.status === 'ended'
           ) {
-            console.log('Video ended event detected');
-            // 既存のタイマーをクリアして即座に次のクリップに遷移
+            console.log('Video ended event detected via postMessage');
+            // 全てのタイマーをクリアして即座に次のクリップに遷移
             if (autoTransitionTimer.current) {
               window.clearTimeout(autoTransitionTimer.current);
+              autoTransitionTimer.current = null;
             }
-            if (timerCheckInterval.current) {
-              window.clearInterval(timerCheckInterval.current);
+            if (pollingInterval.current) {
+              window.clearInterval(pollingInterval.current);
+              pollingInterval.current = null;
             }
             playNextClip();
+            return;
           }
 
-          // シーク（時間変更）イベントを検知した場合、タイマーをリセット（より多くのパターンに対応）
+          // シークイベントの検知（現在時刻の取得を試行）
           const currentTime =
             data.currentTime ||
             data.time ||
             data.position ||
             data.playbackPosition ||
-            data.seconds;
+            (data.videoCurrentTime !== undefined
+              ? data.videoCurrentTime
+              : undefined);
 
-          if (
-            eventType === 'video-seek' ||
-            eventType === 'seeked' ||
-            eventType === 'seek' ||
-            eventType === 'timeupdate' ||
-            eventType === 'progress' ||
-            eventType === 'playback-position' ||
-            currentTime !== undefined
-          ) {
-            console.log('Seek event detected:', data);
-            console.log('Current time detected:', currentTime);
+          if (currentTime !== undefined) {
+            console.log('Current time detected via postMessage:', currentTime);
 
-            // タイマーをリセットして、残り時間を再計算
-            if (currentClip && currentTime !== undefined) {
-              const remainingTime = Math.max(
-                0,
-                currentClip.duration - currentTime
-              );
+            const clipDuration = currentClip.duration;
+            const remainingTime = clipDuration - currentTime;
+            const transitionBuffer = 2;
 
-              console.log('Remaining time after seek:', remainingTime);
+            if (remainingTime > transitionBuffer) {
+              console.log('Resetting timers based on postMessage current time');
 
               // 既存のタイマーをクリア
               if (autoTransitionTimer.current) {
                 window.clearTimeout(autoTransitionTimer.current);
+                autoTransitionTimer.current = null;
               }
-              if (timerCheckInterval.current) {
-                window.clearInterval(timerCheckInterval.current);
+              if (pollingInterval.current) {
+                window.clearInterval(pollingInterval.current);
+                pollingInterval.current = null;
               }
 
-              // 残り時間に基づいて新しいタイマーを設定（2秒前に遷移）
-              if (remainingTime > 2) {
-                const newTransitionTime = Math.max(
-                  1000,
-                  (remainingTime - 2) * 1000
-                );
+              // 新しいタイマーを設定
+              const newTransitionTime = Math.max(
+                500,
+                (remainingTime - transitionBuffer) * 1000
+              );
+              console.log(
+                'Setting new timer based on postMessage:',
+                newTransitionTime / 1000,
+                'seconds'
+              );
+
+              autoTransitionTimer.current = window.setTimeout(() => {
                 console.log(
-                  'Setting new timer for:',
-                  newTransitionTime / 1000,
-                  'seconds'
+                  'Timer triggered via postMessage - playing next clip'
                 );
-                timerStartTime.current = Date.now();
-
-                autoTransitionTimer.current = window.setTimeout(() => {
-                  console.log('Timer triggered - playing next clip');
-                  playNextClip();
-                }, newTransitionTime);
-              } else if (remainingTime > 0) {
-                // 残り2秒以下の場合は少し待ってから遷移
-                const newTransitionTime = Math.max(500, remainingTime * 500);
-                console.log(
-                  'Setting short timer for:',
-                  newTransitionTime / 1000,
-                  'seconds'
-                );
-                timerStartTime.current = Date.now();
-
-                autoTransitionTimer.current = window.setTimeout(() => {
-                  console.log('Short timer triggered - playing next clip');
-                  playNextClip();
-                }, newTransitionTime);
-              }
+                playNextClip();
+              }, newTransitionTime);
             }
           }
         } catch (error) {
-          console.error('Error processing message:', error);
+          console.error('Error processing postMessage:', error);
         }
       }
     };
 
+    // イベントリスナーを追加
     window.addEventListener('message', handleMessage);
 
+    // 少し遅延してからポーリングベースのタイマーを開始
+    const setupTimer = setTimeout(() => {
+      setupPollingBasedTransition();
+    }, 1000); // 1秒待ってからタイマー開始
+
+    // デバッグ用のグローバル関数
+    window.debugAutoTransition = () => {
+      console.log('=== Auto Transition Debug Info ===');
+      console.log('Auto play enabled:', autoPlayEnabled);
+      console.log('Current clip:', currentClip?.title);
+      console.log('Timer active:', !!autoTransitionTimer.current);
+      console.log('Polling active:', !!pollingInterval.current);
+
+      const iframe = getPlayerIframe();
+      console.log('Player iframe found:', !!iframe);
+      if (iframe) {
+        console.log('Iframe src:', iframe.src);
+      }
+    };
+
+    // クリーンアップ
     return () => {
       window.removeEventListener('message', handleMessage);
-    };
-  }, [playNextClip, autoPlayEnabled, currentClip]);
+      clearTimeout(setupTimer);
 
-  // クリップが変更されたときに自動遷移タイマーを設定（フォールバック）
-  useEffect(() => {
-    if (currentClip) {
-      setupAutoTransition();
-    }
-
-    // クリーンアップ関数でタイマーとインターバルをクリア
-    return () => {
       if (autoTransitionTimer.current) {
         window.clearTimeout(autoTransitionTimer.current);
+        autoTransitionTimer.current = null;
       }
       if (timerCheckInterval.current) {
         window.clearInterval(timerCheckInterval.current);
+        timerCheckInterval.current = null;
+      }
+      if (pollingInterval.current) {
+        window.clearInterval(pollingInterval.current);
+        pollingInterval.current = null;
       }
     };
-  }, [currentClip, setupAutoTransition]);
+  }, [playNextClip, autoPlayEnabled, currentClip]);
 
   const playPreviousClip = () => {
     // 手動で前のクリップに移動する場合、現在のタイマーとインターバルをクリア
