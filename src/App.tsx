@@ -79,9 +79,7 @@ const translations = {
     createdAt: '作成日時',
     broadcaster: '配信者',
     creator: '作成者',
-    skipClip: '次のクリップ',
-    autoPlayOn: '自動再生: ON',
-    autoPlayOff: '自動再生: OFF',
+
     notification: 'お知らせ',
     close: '閉じる',
     updateTitle: 'アップデート情報',
@@ -135,9 +133,7 @@ const translations = {
     createdAt: 'created at',
     broadcaster: 'Broadcaster',
     creator: 'Creator',
-    skipClip: 'Skip Clip',
-    autoPlayOn: 'Auto Play: ON',
-    autoPlayOff: 'Auto Play: OFF',
+
     notification: 'Notification',
     close: 'Close',
     updateTitle: 'Update Information',
@@ -180,6 +176,15 @@ const Header = styled.header`
   background-color: #1f1f23;
   padding: 1rem 2rem;
   border-bottom: 1px solid #303032;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const AppIcon = styled.svg`
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 `;
 
 const Title = styled.h1`
@@ -401,56 +406,6 @@ const LanguageButton = styled.button`
   }
 `;
 
-const ControlsContainer = styled.div`
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  opacity: 0;
-  transition: opacity 0.2s;
-
-  ${ClipEmbed}:hover & {
-    opacity: 1;
-  }
-`;
-
-const AutoPlayButton = styled.button<{ $active: boolean }>`
-  background: ${(props) => (props.$active ? '#9146ff' : 'transparent')};
-  border: 1px solid #9146ff;
-  color: white;
-  cursor: pointer;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #bf94ff;
-    border-color: #bf94ff;
-  }
-`;
-
-const SkipButton = styled.button`
-  background: transparent;
-  border: 1px solid #9146ff;
-  color: white;
-  cursor: pointer;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #9146ff;
-    border-color: #9146ff;
-  }
-`;
-
 const NotificationButton = styled.button`
   position: absolute;
   top: 1rem;
@@ -593,8 +548,7 @@ function App() {
     return browserLang.startsWith('ja') ? 'ja' : 'en';
   });
   const t = translations[language];
-  // 状態管理
-  const [isAutoPlayEnabled, setIsAutoPlayEnabled] = useState(true);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [showNotification, setShowNotification] = useState(false);
@@ -1020,25 +974,6 @@ function App() {
   }, [clips, currentClip]);
 
   useEffect(() => {
-    let timeoutId: number;
-
-    if (currentClip && isAutoPlayEnabled) {
-      timeoutId = window.setTimeout(
-        () => {
-          playNextClip();
-        },
-        (currentClip.duration + 3) * 1000
-      );
-
-      return () => {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId);
-        }
-      };
-    }
-  }, [currentClip, playNextClip, isAutoPlayEnabled]);
-
-  useEffect(() => {
     if (broadcasterId) {
       setCurrentClip(null);
       setCursor(null);
@@ -1090,28 +1025,34 @@ function App() {
     });
   };
 
-  // 再生/一時停止の切り替え（UI表示のみ）
-  const toggleAutoPlay = () => {
-    setIsAutoPlayEnabled(!isAutoPlayEnabled);
-
-    // Google Analyticsイベントの送信
-    sendGAEvent('toggle_autoplay', {
-      auto_play_enabled: !isAutoPlayEnabled,
-    });
-  };
-
-  const skipToNextClip = () => {
-    playNextClip();
-
-    // Google Analyticsイベントの送信
-    sendGAEvent('skip_clip_manual');
-  };
-
   return (
     <Container>
       <Header>
-        <Title>{t.title}</Title>
-        <Subtitle>{t.subtitle}</Subtitle>
+        <AppIcon
+          xmlns="http://www.w3.org/2000/svg"
+          width="32"
+          height="32"
+          viewBox="0 0 32 32"
+        >
+          <rect width="32" height="32" fill="#9146FF" rx="4" />
+          <path
+            d="M8 12 L16 8 L16 11 L20 11 C22 11 24 13 24 15 L24 17 C24 19 22 21 20 21 L16 21 L16 24 L8 20 Z"
+            fill="white"
+            opacity="0.9"
+          />
+          <polygon points="12,14 12,18 16,16" fill="#9146FF" />
+          <path
+            d="M18 13 Q22 13 22 16 Q22 19 18 19"
+            stroke="white"
+            strokeWidth="1.5"
+            fill="none"
+            opacity="0.7"
+          />
+        </AppIcon>
+        <div>
+          <Title>{t.title}</Title>
+          <Subtitle>{t.subtitle}</Subtitle>
+        </div>
         <LanguageButton onClick={toggleLanguage}>
           {language === 'ja' ? 'English' : '日本語'}
         </LanguageButton>
@@ -1211,15 +1152,6 @@ function App() {
                   loading="lazy"
                   referrerPolicy="origin"
                 />
-                <ControlsContainer>
-                  <AutoPlayButton
-                    $active={isAutoPlayEnabled}
-                    onClick={toggleAutoPlay}
-                  >
-                    {isAutoPlayEnabled ? t.autoPlayOn : t.autoPlayOff}
-                  </AutoPlayButton>
-                  <SkipButton onClick={skipToNextClip}>{t.skipClip}</SkipButton>
-                </ControlsContainer>
               </ClipEmbed>
               <ClipInfo>
                 <ClipTitle>{currentClip.title}</ClipTitle>
