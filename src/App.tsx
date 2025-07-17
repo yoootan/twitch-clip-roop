@@ -589,7 +589,7 @@ function App() {
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
 
   // 自動遷移用のタイマーID
-  const autoTransitionTimer = useRef<NodeJS.Timeout | null>(null);
+  const autoTransitionTimer = useRef<number | null>(null);
 
   // アクセストークンを取得する関数
   const initializeAccessToken = useCallback(async () => {
@@ -869,7 +869,7 @@ function App() {
   // 自動遷移タイマーを設定する関数
   const setupAutoTransition = useCallback(() => {
     if (autoTransitionTimer.current) {
-      clearTimeout(autoTransitionTimer.current);
+      window.clearTimeout(autoTransitionTimer.current);
     }
 
     // 自動再生が無効の場合はタイマーを設定しない
@@ -878,7 +878,7 @@ function App() {
     // クリップの長さ + 1秒のバッファーで次のクリップに遷移
     const transitionTime = (currentClip.duration + 1) * 1000;
 
-    autoTransitionTimer.current = setTimeout(() => {
+    autoTransitionTimer.current = window.setTimeout(() => {
       playNextClip();
     }, transitionTime);
   }, [currentClip, playNextClip, autoPlayEnabled]);
@@ -919,7 +919,7 @@ function App() {
     // クリーンアップ関数でタイマーをクリア
     return () => {
       if (autoTransitionTimer.current) {
-        clearTimeout(autoTransitionTimer.current);
+        window.clearTimeout(autoTransitionTimer.current);
       }
     };
   }, [currentClip, setupAutoTransition]);
@@ -927,7 +927,7 @@ function App() {
   const playPreviousClip = () => {
     // 手動で前のクリップに移動する場合、現在のタイマーをクリア
     if (autoTransitionTimer.current) {
-      clearTimeout(autoTransitionTimer.current);
+      window.clearTimeout(autoTransitionTimer.current);
     }
 
     // Google Analyticsイベントの送信
@@ -1066,7 +1066,7 @@ function App() {
   const handleNextClip = () => {
     // 手動で次のクリップに移動する場合、現在のタイマーをクリア
     if (autoTransitionTimer.current) {
-      clearTimeout(autoTransitionTimer.current);
+      window.clearTimeout(autoTransitionTimer.current);
     }
     playNextClip();
   };
