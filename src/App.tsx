@@ -328,45 +328,6 @@ const ClipMeta = styled.div`
   font-size: 0.9rem;
 `;
 
-const ClipLink = styled.a`
-  display: block;
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background-color: #1f1f23;
-  border-radius: 8px;
-  padding: 8px;
-  border: 1px solid #303032;
-  transition: all 0.2s;
-  text-decoration: none;
-  width: 200px;
-
-  &:hover {
-    transform: scale(1.05);
-    border-color: #9147ff;
-  }
-`;
-
-const ClipThumbnail = styled.img`
-  width: 100%;
-  border-radius: 4px;
-  margin-bottom: 8px;
-`;
-
-const ClipLinkTitle = styled.div`
-  color: #efeff1;
-  font-size: 0.9rem;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-`;
-
-const ClipLinkMeta = styled.div`
-  color: #adadb8;
-  font-size: 0.8rem;
-`;
-
 const FilterContainer = styled.div`
   display: flex;
   gap: 1rem;
@@ -590,6 +551,10 @@ function App() {
 
   // 自動遷移用のタイマーID
   const autoTransitionTimer = useRef<number | null>(null);
+  // タイマー開始時刻を記録
+  const timerStartTime = useRef<number | null>(null);
+  // 定期的にタイマーをチェックするためのインターバル
+  const timerCheckInterval = useRef<number | null>(null);
 
   // アクセストークンを取得する関数
   const initializeAccessToken = useCallback(async () => {
@@ -868,12 +833,19 @@ function App() {
 
   // 自動遷移タイマーを設定する関数
   const setupAutoTransition = useCallback(() => {
+    // 既存のタイマーとインターバルをクリア
     if (autoTransitionTimer.current) {
       window.clearTimeout(autoTransitionTimer.current);
+    }
+    if (timerCheckInterval.current) {
+      window.clearInterval(timerCheckInterval.current);
     }
 
     // 自動再生が無効の場合はタイマーを設定しない
     if (!autoPlayEnabled || !currentClip) return;
+
+    // タイマー開始時刻を記録
+    timerStartTime.current = Date.now();
 
     // クリップの長さ + 1秒のバッファーで次のクリップに遷移
     const transitionTime = (currentClip.duration + 1) * 1000;
@@ -881,6 +853,46 @@ function App() {
     autoTransitionTimer.current = window.setTimeout(() => {
       playNextClip();
     }, transitionTime);
+
+    // 定期的にTwitchプレイヤーからのメッセージをチェック（フォールバック）
+
+    // 1秒ごとにチェックして、手動シークが発生した可能性を監視
+    timerCheckInterval.current = window.setInterval(() => {
+      if (!autoPlayEnabled || !currentClip) {
+        if (timerCheckInterval.current) {
+          window.clearInterval(timerCheckInterval.current);
+        }
+        return;
+      }
+
+      const elapsed = Date.now() - (timerStartTime.current || 0);
+      const expectedRemaining = transitionTime - elapsed;
+
+      // 残り時間が3秒以下になったら、より短い間隔でチェック
+      if (expectedRemaining <= 3000 && expectedRemaining > 0) {
+        // より精密なチェックのために間隔を短くする
+        if (timerCheckInterval.current) {
+          window.clearInterval(timerCheckInterval.current);
+        }
+
+        // 500ms間隔でチェック
+        timerCheckInterval.current = window.setInterval(() => {
+          const currentElapsed = Date.now() - (timerStartTime.current || 0);
+          const currentRemaining = transitionTime - currentElapsed;
+
+          if (currentRemaining <= 500) {
+            // 残り500ms以下で次のクリップに遷移
+            if (timerCheckInterval.current) {
+              window.clearInterval(timerCheckInterval.current);
+            }
+            if (autoTransitionTimer.current) {
+              window.clearTimeout(autoTransitionTimer.current);
+            }
+            playNextClip();
+          }
+        }, 500);
+      }
+    }, 1000);
   }, [currentClip, playNextClip, autoPlayEnabled]);
 
   // Twitch埋め込みプレイヤーからのメッセージを監視
@@ -893,9 +905,50 @@ function App() {
       if (event.origin === 'https://clips.twitch.tv') {
         try {
           const data = JSON.parse(event.data);
+
           // クリップ終了イベントを検知
           if (data.type === 'video-ended' || data.type === 'ended') {
+            // 既存のタイマーをクリアして即座に次のクリップに遷移
+            if (autoTransitionTimer.current) {
+              window.clearTimeout(autoTransitionTimer.current);
+            }
+            if (timerCheckInterval.current) {
+              window.clearInterval(timerCheckInterval.current);
+            }
             playNextClip();
+          }
+
+          // シーク（時間変更）イベントを検知した場合、タイマーをリセット
+          if (
+            data.type === 'video-seek' ||
+            data.type === 'seeked' ||
+            data.type === 'timeupdate'
+          ) {
+            // タイマーをリセットして、残り時間を再計算
+            if (currentClip && data.currentTime !== undefined) {
+              const remainingTime = Math.max(
+                0,
+                currentClip.duration - data.currentTime
+              );
+
+              // 既存のタイマーをクリア
+              if (autoTransitionTimer.current) {
+                window.clearTimeout(autoTransitionTimer.current);
+              }
+              if (timerCheckInterval.current) {
+                window.clearInterval(timerCheckInterval.current);
+              }
+
+              // 残り時間に基づいて新しいタイマーを設定
+              if (remainingTime > 0) {
+                const newTransitionTime = (remainingTime + 1) * 1000; // 1秒のバッファー
+                timerStartTime.current = Date.now();
+
+                autoTransitionTimer.current = window.setTimeout(() => {
+                  playNextClip();
+                }, newTransitionTime);
+              }
+            }
           }
         } catch (error) {
           // JSON解析エラーは無視
@@ -908,7 +961,7 @@ function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [playNextClip, autoPlayEnabled]);
+  }, [playNextClip, autoPlayEnabled, currentClip]);
 
   // クリップが変更されたときに自動遷移タイマーを設定（フォールバック）
   useEffect(() => {
@@ -916,18 +969,24 @@ function App() {
       setupAutoTransition();
     }
 
-    // クリーンアップ関数でタイマーをクリア
+    // クリーンアップ関数でタイマーとインターバルをクリア
     return () => {
       if (autoTransitionTimer.current) {
         window.clearTimeout(autoTransitionTimer.current);
+      }
+      if (timerCheckInterval.current) {
+        window.clearInterval(timerCheckInterval.current);
       }
     };
   }, [currentClip, setupAutoTransition]);
 
   const playPreviousClip = () => {
-    // 手動で前のクリップに移動する場合、現在のタイマーをクリア
+    // 手動で前のクリップに移動する場合、現在のタイマーとインターバルをクリア
     if (autoTransitionTimer.current) {
       window.clearTimeout(autoTransitionTimer.current);
+    }
+    if (timerCheckInterval.current) {
+      window.clearInterval(timerCheckInterval.current);
     }
 
     // Google Analyticsイベントの送信
@@ -1064,9 +1123,12 @@ function App() {
   };
 
   const handleNextClip = () => {
-    // 手動で次のクリップに移動する場合、現在のタイマーをクリア
+    // 手動で次のクリップに移動する場合、現在のタイマーとインターバルをクリア
     if (autoTransitionTimer.current) {
       window.clearTimeout(autoTransitionTimer.current);
+    }
+    if (timerCheckInterval.current) {
+      window.clearInterval(timerCheckInterval.current);
     }
     playNextClip();
   };
@@ -1244,52 +1306,34 @@ function App() {
         {loading && <div>読み込み中...</div>}
         {error && <div style={{ color: '#ff4747' }}>{error}</div>}
         {currentClip && (
-          <>
-            <ClipContainer>
-              <ClipEmbed>
-                <NavigationButton className="prev" onClick={playPreviousClip}>
-                  ＜
-                </NavigationButton>
-                <NavigationButton className="next" onClick={handleNextClip}>
-                  ＞
-                </NavigationButton>
-                <ClipIframe
-                  ref={iframeRef}
-                  title="Twitch Clip Player"
-                  src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=true&playbackRateControls=true&seekable=true&preload=auto`}
-                  allowFullScreen
-                  allow="autoplay"
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                  loading="lazy"
-                  referrerPolicy="origin"
-                />
-              </ClipEmbed>
-              <ClipInfo>
-                <ClipTitle>{currentClip.title}</ClipTitle>
-                <ClipMeta>
-                  {t.views}: {currentClip.view_count.toLocaleString()} •
-                  {t.duration}: {currentClip.duration}秒 •{t.createdAt}:{' '}
-                  {formatDate(currentClip.created_at)}
-                </ClipMeta>
-              </ClipInfo>
-            </ClipContainer>
-            <ClipLink
-              href={`https://clips.twitch.tv/${currentClip.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ClipThumbnail
-                src={currentClip.thumbnail_url}
-                alt={currentClip.title}
+          <ClipContainer>
+            <ClipEmbed>
+              <NavigationButton className="prev" onClick={playPreviousClip}>
+                ＜
+              </NavigationButton>
+              <NavigationButton className="next" onClick={handleNextClip}>
+                ＞
+              </NavigationButton>
+              <ClipIframe
+                ref={iframeRef}
+                title="Twitch Clip Player"
+                src={`https://clips.twitch.tv/embed?clip=${currentClip.id}&parent=${window.location.hostname}&parent=localhost&parent=127.0.0.1&autoplay=true&muted=false&controls=true&playbackRateControls=true&seekable=true&preload=auto`}
+                allowFullScreen
+                allow="autoplay"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                loading="lazy"
+                referrerPolicy="origin"
               />
-              <ClipLinkTitle>{currentClip.title}</ClipLinkTitle>
-              <ClipLinkMeta>
-                {t.broadcaster}: {currentClip.broadcaster_name} •{t.creator}:{' '}
-                {currentClip.creator_name} •{t.duration}: {currentClip.duration}
-                秒 •{t.createdAt}: {formatDate(currentClip.created_at)}
-              </ClipLinkMeta>
-            </ClipLink>
-          </>
+            </ClipEmbed>
+            <ClipInfo>
+              <ClipTitle>{currentClip.title}</ClipTitle>
+              <ClipMeta>
+                {t.views}: {currentClip.view_count.toLocaleString()} •
+                {t.duration}: {currentClip.duration}秒 •{t.createdAt}:{' '}
+                {formatDate(currentClip.created_at)}
+              </ClipMeta>
+            </ClipInfo>
+          </ClipContainer>
         )}
       </MainContent>
     </Container>
