@@ -79,6 +79,9 @@ const translations = {
     createdAt: '作成日時',
     broadcaster: '配信者',
     creator: '作成者',
+    autoPlay: '自動再生',
+    autoPlayOn: 'ON',
+    autoPlayOff: 'OFF',
 
     notification: 'お知らせ',
     close: '閉じる',
@@ -133,6 +136,9 @@ const translations = {
     createdAt: 'created at',
     broadcaster: 'Broadcaster',
     creator: 'Creator',
+    autoPlay: 'Auto Play',
+    autoPlayOn: 'ON',
+    autoPlayOff: 'OFF',
 
     notification: 'Notification',
     close: 'Close',
@@ -406,6 +412,34 @@ const LanguageButton = styled.button`
   }
 `;
 
+const AutoPlayButton = styled.button`
+  position: fixed;
+  top: 120px;
+  right: 20px;
+  padding: 8px 16px;
+  background-color: #1f1f23;
+  color: #efeff1;
+  border: 1px solid #303032;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #9147ff;
+    background-color: #2f2f35;
+  }
+
+  &.enabled {
+    border-color: #00ff88;
+    color: #00ff88;
+  }
+
+  &.disabled {
+    border-color: #ff4747;
+    color: #ff4747;
+  }
+`;
+
 const NotificationButton = styled.button`
   position: absolute;
   top: 1rem;
@@ -552,6 +586,10 @@ function App() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [showNotification, setShowNotification] = useState(false);
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+
+  // 自動遷移用のタイマーID
+  const autoTransitionTimer = useRef<NodeJS.Timeout | null>(null);
 
   // アクセストークンを取得する関数
   const initializeAccessToken = useCallback(async () => {
@@ -828,7 +866,70 @@ function App() {
     }
   }, [currentClipIndex, clips, hasMoreClips, cursor, fetchClips]);
 
+  // 自動遷移タイマーを設定する関数
+  const setupAutoTransition = useCallback(() => {
+    if (autoTransitionTimer.current) {
+      clearTimeout(autoTransitionTimer.current);
+    }
+
+    // 自動再生が無効の場合はタイマーを設定しない
+    if (!autoPlayEnabled || !currentClip) return;
+
+    // クリップの長さ + 1秒のバッファーで次のクリップに遷移
+    const transitionTime = (currentClip.duration + 1) * 1000;
+
+    autoTransitionTimer.current = setTimeout(() => {
+      playNextClip();
+    }, transitionTime);
+  }, [currentClip, playNextClip, autoPlayEnabled]);
+
+  // Twitch埋め込みプレイヤーからのメッセージを監視
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // 自動再生が無効の場合は何もしない
+      if (!autoPlayEnabled) return;
+
+      // Twitchクリッププレイヤーからのメッセージを処理
+      if (event.origin === 'https://clips.twitch.tv') {
+        try {
+          const data = JSON.parse(event.data);
+          // クリップ終了イベントを検知
+          if (data.type === 'video-ended' || data.type === 'ended') {
+            playNextClip();
+          }
+        } catch (error) {
+          // JSON解析エラーは無視
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [playNextClip, autoPlayEnabled]);
+
+  // クリップが変更されたときに自動遷移タイマーを設定（フォールバック）
+  useEffect(() => {
+    if (currentClip) {
+      setupAutoTransition();
+    }
+
+    // クリーンアップ関数でタイマーをクリア
+    return () => {
+      if (autoTransitionTimer.current) {
+        clearTimeout(autoTransitionTimer.current);
+      }
+    };
+  }, [currentClip, setupAutoTransition]);
+
   const playPreviousClip = () => {
+    // 手動で前のクリップに移動する場合、現在のタイマーをクリア
+    if (autoTransitionTimer.current) {
+      clearTimeout(autoTransitionTimer.current);
+    }
+
     // Google Analyticsイベントの送信
     sendGAEvent('play_previous_clip');
 
@@ -963,6 +1064,10 @@ function App() {
   };
 
   const handleNextClip = () => {
+    // 手動で次のクリップに移動する場合、現在のタイマーをクリア
+    if (autoTransitionTimer.current) {
+      clearTimeout(autoTransitionTimer.current);
+    }
     playNextClip();
   };
 
@@ -1056,6 +1161,12 @@ function App() {
         <LanguageButton onClick={toggleLanguage}>
           {language === 'ja' ? 'English' : '日本語'}
         </LanguageButton>
+        <AutoPlayButton
+          className={autoPlayEnabled ? 'enabled' : 'disabled'}
+          onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
+        >
+          {t.autoPlay}: {autoPlayEnabled ? t.autoPlayOn : t.autoPlayOff}
+        </AutoPlayButton>
         <NotificationButton onClick={() => setShowNotification(true)}>
           {t.notification}
         </NotificationButton>
