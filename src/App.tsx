@@ -847,8 +847,8 @@ function App() {
     // タイマー開始時刻を記録
     timerStartTime.current = Date.now();
 
-    // クリップの長さ + 1秒のバッファーで次のクリップに遷移
-    const transitionTime = (currentClip.duration + 1) * 1000;
+    // クリップの長さ - 2秒で次のクリップに遷移（2秒前に遷移）
+    const transitionTime = Math.max(1000, (currentClip.duration - 2) * 1000);
 
     autoTransitionTimer.current = window.setTimeout(() => {
       playNextClip();
@@ -868,20 +868,20 @@ function App() {
       const elapsed = Date.now() - (timerStartTime.current || 0);
       const expectedRemaining = transitionTime - elapsed;
 
-      // 残り時間が3秒以下になったら、より短い間隔でチェック
-      if (expectedRemaining <= 3000 && expectedRemaining > 0) {
+      // 残り時間が5秒以下になったら、より短い間隔でチェック
+      if (expectedRemaining <= 5000 && expectedRemaining > 0) {
         // より精密なチェックのために間隔を短くする
         if (timerCheckInterval.current) {
           window.clearInterval(timerCheckInterval.current);
         }
 
-        // 500ms間隔でチェック
+        // 300ms間隔でチェック
         timerCheckInterval.current = window.setInterval(() => {
           const currentElapsed = Date.now() - (timerStartTime.current || 0);
           const currentRemaining = transitionTime - currentElapsed;
 
-          if (currentRemaining <= 500) {
-            // 残り500ms以下で次のクリップに遷移
+          if (currentRemaining <= 200) {
+            // 残り200ms以下で次のクリップに遷移
             if (timerCheckInterval.current) {
               window.clearInterval(timerCheckInterval.current);
             }
@@ -890,7 +890,7 @@ function App() {
             }
             playNextClip();
           }
-        }, 500);
+        }, 300);
       }
     }, 1000);
   }, [currentClip, playNextClip, autoPlayEnabled]);
@@ -939,9 +939,20 @@ function App() {
                 window.clearInterval(timerCheckInterval.current);
               }
 
-              // 残り時間に基づいて新しいタイマーを設定
-              if (remainingTime > 0) {
-                const newTransitionTime = (remainingTime + 1) * 1000; // 1秒のバッファー
+              // 残り時間に基づいて新しいタイマーを設定（2秒前に遷移）
+              if (remainingTime > 2) {
+                const newTransitionTime = Math.max(
+                  1000,
+                  (remainingTime - 2) * 1000
+                );
+                timerStartTime.current = Date.now();
+
+                autoTransitionTimer.current = window.setTimeout(() => {
+                  playNextClip();
+                }, newTransitionTime);
+              } else if (remainingTime > 0) {
+                // 残り2秒以下の場合は少し待ってから遷移
+                const newTransitionTime = Math.max(500, remainingTime * 500);
                 timerStartTime.current = Date.now();
 
                 autoTransitionTimer.current = window.setTimeout(() => {
